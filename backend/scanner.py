@@ -213,7 +213,7 @@ def apply_ama_pro_tema(df, tf_input="1 day", **kwargs):
     Returns: (signal, crossover_angle) or (None, None)
     """
     if df is None or len(df) < 200:
-        return None, None
+        return None, None, None
 
     # Drop the last row (current forming/incomplete candle) so all logic
     # runs exclusively on closed candles. After this, df.iloc[-1] is the
@@ -221,7 +221,7 @@ def apply_ama_pro_tema(df, tf_input="1 day", **kwargs):
     df = df.iloc[:-1].copy()
 
     if len(df) < 200:
-        return None, None
+        return None, None, None
 
     try:
         # === PINE SCRIPT PARAMETERS ===
@@ -461,6 +461,7 @@ def apply_ama_pro_tema(df, tf_input="1 day", **kwargs):
 
         signal = None
         crossover_angle = None
+        tema_gap_pct = None
 
         last_row = df.iloc[-1]
         last_ts = df.index[-1]
@@ -472,6 +473,12 @@ def apply_ama_pro_tema(df, tf_input="1 day", **kwargs):
 
         if signal:
             logging.info(f"  >>> {signal} signal on latest closed candle {last_ts}")
+
+            # Calculate TEMA gap percentage
+            fast_val = last_row['temaFast']
+            slow_val = last_row['temaSlow']
+            if slow_val != 0:
+                tema_gap_pct = round((fast_val - slow_val) / slow_val * 100, 3)
 
             # Calculate crossover angle
             try:
@@ -491,14 +498,14 @@ def apply_ama_pro_tema(df, tf_input="1 day", **kwargs):
                 crossover_angle = 0.0
         else:
             logging.info(f"  No signal on latest closed candle {last_ts}.")
-            
-        return signal, crossover_angle
+
+        return signal, crossover_angle, tema_gap_pct
         
     except Exception as e:
         logging.error(f"Error in AMA PRO TEMA calculation: {str(e)}")
         import traceback
         logging.error(traceback.format_exc())
-        return None, None
+        return None, None, None
 
 # =============================================================================
 # MAIN SCAN ENTRY POINT
@@ -519,22 +526,23 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 if df is not None and len(df) >= 200:
                     # Run CPU-intensive calculation in the thread pool to avoid blocking event loop
                     loop = asyncio.get_event_loop()
-                    signal, angle = await loop.run_in_executor(
+                    signal, angle, tema_gap = await loop.run_in_executor(
                         executor,
                         lambda: apply_ama_pro_tema(
-                            df, 
+                            df,
                             tf_input=tf,
-                            adaptation_speed=adaptation_speed, 
+                            adaptation_speed=adaptation_speed,
                             min_bars_between=min_bars_between
                         )
                     )
-                    
+
                     if signal:
                         results_list.append({
                             'Crypto Name': symbol,
                             'Timeperiod': tf,
                             'Signal': signal,
                             'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
+                            'TEMA Gap': f"{tema_gap:+.3f}%" if tema_gap is not None else "N/A",
                             'Daily Change': daily_change,
                             'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         })

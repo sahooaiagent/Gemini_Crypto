@@ -215,6 +215,7 @@ function renderResults() {
                     </span>
                 </td>
                 <td class="mono">${r.Angle || '—'}</td>
+                <td class="mono">${r['TEMA Gap'] || '—'}</td>
                 <td class="${changeCls}">${changeStr}</td>
                 <td class="mono">${r.Timestamp || '—'}</td>
                 <td>
