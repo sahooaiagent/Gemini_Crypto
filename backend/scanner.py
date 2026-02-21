@@ -99,6 +99,9 @@ def calculate_adx(high, low, close, length):
 
 exchange = ccxt.binance({
     'enableRateLimit': True,
+    'options': {
+        'defaultType': 'swap',   # USDT-Margined Perpetual contracts
+    },
 })
 
 async def fetch_binance_data(symbol, timeframe, limit=500):
@@ -168,23 +171,17 @@ async def get_top_binance_symbols(limit=100):
         markets = await exchange.load_markets()
         tickers = await exchange.fetch_tickers()
         
-        # 4. Match top coins with Binance USDT pairs
+        # 4. Match top coins with Binance USDT-Margined Perpetual contracts only
         final_symbols = []
         for coin_sym in top_names:
             perp_symbol = f"{coin_sym}/USDT:USDT"
-            spot_symbol = f"{coin_sym}/USDT"
-            
-            target = None
+
             if perp_symbol in markets:
-                target = perp_symbol
-            elif spot_symbol in markets:
-                target = spot_symbol
-            
-            if target:
-                ticker = tickers.get(target, {})
+                ticker = tickers.get(perp_symbol, {})
                 final_symbols.append({
-                    'symbol': target, 
-                    'change': ticker.get('percentage', 0)
+                    'symbol': perp_symbol,
+                    'change': ticker.get('percentage', 0),
+                    'price': ticker.get('last', None)
                 })
         
         # Update cache

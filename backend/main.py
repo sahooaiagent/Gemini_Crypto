@@ -129,10 +129,15 @@ async def get_market_data():
         top_coins = await scanner.get_top_binance_symbols(limit=10)
         results = []
         for coin in top_coins:
+            price = coin.get('price')
+            price_str = f"{price:,.2f}" if price is not None else "N/A"
+            change = coin.get('change', 0)
+            if change is None:
+                change = 0
             results.append({
                 "name": coin['symbol'].replace('/USDT', '').replace(':USDT', ''),
-                "price": "N/A",
-                "change": f"{coin['change']:+.2f}"
+                "price": price_str,
+                "change": f"{change:+.2f}"
             })
         return {"indices": results}
     except Exception as e:

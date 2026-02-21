@@ -90,6 +90,7 @@ function renderTickerTape() {
         return `
             <span class="ticker-item">
                 <span class="name">${idx.name}</span>
+                <span class="price">$${idx.price || 'N/A'}</span>
                 <span class="${changeCls}">${arrow} ${idx.change}%</span>
             </span>
         `;
@@ -126,6 +127,7 @@ function renderHeatmap() {
         return `
             <div class="heatmap-tile ${cls}">
                 <span class="heatmap-name">${idx.name}</span>
+                <span class="heatmap-price">$${idx.price || 'N/A'}</span>
                 <span class="heatmap-change ${changeCls}">
                     <i class="fas fa-caret-${changeVal >= 0 ? 'up' : 'down'}"></i>
                     ${idx.change}%
