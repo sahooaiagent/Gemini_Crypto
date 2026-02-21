@@ -52,6 +52,7 @@ class ScanRequest(BaseModel):
     adaptation_speed: Optional[str] = "Medium"
     min_bars_between: Optional[int] = 3
     crypto_count: Optional[int] = 20
+    scanner_type: Optional[str] = "ama_pro"  # 'ama_pro', 'qwen', or 'both'
 
 # ── API ROUTES ──
 
@@ -65,7 +66,7 @@ def serve_frontend():
 
 @app.post("/api/scan")
 async def trigger_scan(request: ScanRequest):
-    logging.info(f"Received scan request for indices: {request.indices} and timeframes: {request.timeframes} | Speed: {request.adaptation_speed} | MinBars: {request.min_bars_between}")
+    logging.info(f"Received scan request for indices: {request.indices} and timeframes: {request.timeframes} | Speed: {request.adaptation_speed} | MinBars: {request.min_bars_between} | Scanner: {request.scanner_type}")
     try:
         # Clear log file before new scan
         open(log_file, 'w').close()
@@ -80,7 +81,8 @@ async def trigger_scan(request: ScanRequest):
             log_file,
             adaptation_speed=request.adaptation_speed,
             min_bars_between=request.min_bars_between,
-            crypto_count=request.crypto_count
+            crypto_count=request.crypto_count,
+            scanner_type=request.scanner_type
         )
         
         duration = round(time.time() - start_time, 2)

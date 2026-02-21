@@ -1,0 +1,423 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © sahooss
+
+//@version=6
+indicator("Qwen AMA", shorttitle="Qwen AMA", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 1: SYSTEM SELECTION INPUTS
+// ═══════════════════════════════════════════════════════════════════════════════
+systemGroup = "🎛️ System Selection"
+i_enableQwen = input.bool(true, "Enable MA Qwen System", group=systemGroup)
+i_enableTEMA = input.bool(true, "Enable AMA Pro TEMA System", group=systemGroup)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 2: MA QWEN SYSTEM INPUTS
+// ═══════════════════════════════════════════════════════════════════════════════
+qwenGroup = "MA Qwen Settings"
+qwen_volLookbackHours = input.int(24, "Qwen: Volatility Lookback (hours)", minval=12, group=qwenGroup)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 3: AMA PRO TEMA SYSTEM INPUTS
+// ═══════════════════════════════════════════════════════════════════════════════
+tema_adaptiveGroup = "🎯 TEMA: Adaptive System Controls"
+tema_enableAdaptive = input.bool(true, "Enable Adaptive Parameters", group=tema_adaptiveGroup)
+tema_adaptiveSensitivity = input.string("Medium", "Adaptation Speed", options=["Low", "Medium", "High"], group=tema_adaptiveGroup)
+tema_showRegimeInfo = input.bool(true, "Show Market Regime Info", group=tema_adaptiveGroup)
+tema_regimeAlerts = input.bool(true, "Alert on Regime Change", group=tema_adaptiveGroup)
+
+tema_boundsGroup = "📊 TEMA: Parameter Bounds"
+tema_emaFastMin = input.int(8, "TEMA Fast: Min", minval=3, maxval=30, group=tema_boundsGroup)
+tema_emaFastMax = input.int(21, "TEMA Fast: Max", minval=10, maxval=50, group=tema_boundsGroup)
+tema_emaSlowMin = input.int(21, "TEMA Slow: Min", minval=15, maxval=50, group=tema_boundsGroup)
+tema_emaSlowMax = input.int(55, "TEMA Slow: Max", minval=30, maxval=100, group=tema_boundsGroup)
+tema_rsiMin = input.int(10, "RSI: Min", minval=7, maxval=21, group=tema_boundsGroup)
+tema_rsiMax = input.int(21, "RSI: Max", minval=14, maxval=35, group=tema_boundsGroup)
+tema_bbLengthMin = input.int(14, "BB: Min", minval=10, maxval=25, group=tema_boundsGroup)
+tema_bbLengthMax = input.int(34, "BB: Max", minval=20, maxval=50, group=tema_boundsGroup)
+
+tema_manualGroup = "⚙️ TEMA: Manual Parameters"
+tema_manualEmaFast = input.int(12, "TEMA Fast", minval=3, group=tema_manualGroup)
+tema_manualEmaSlow = input.int(26, "TEMA Slow", minval=10, group=tema_manualGroup)
+tema_manualRsi = input.int(14, "RSI Period", minval=7, group=tema_manualGroup)
+tema_manualBbLength = input.int(20, "BB Period", minval=10, group=tema_manualGroup)
+
+tema_regimeGroup = "🔍 TEMA: Regime Detection"
+tema_adxLength = input.int(14, "ADX Period", minval=7, maxval=28, group=tema_regimeGroup)
+tema_adxThreshold = input.int(25, "ADX Threshold", minval=15, maxval=40, group=tema_regimeGroup)
+tema_volLookback = input.int(50, "Volatility Lookback", minval=20, maxval=200, group=tema_regimeGroup)
+tema_regimeStability = input.int(3, "Regime Stability", minval=1, maxval=10, group=tema_regimeGroup)
+
+tema_assetGroup = "💱 TEMA: Asset Type"
+tema_autoDetectAsset = input.bool(true, "Auto-Detect", group=tema_assetGroup)
+tema_manualAssetType = input.string("Crypto", "Manual Type", options=["Forex", "Crypto", "Stock", "Commodity"], group=tema_assetGroup)
+
+tema_filterGroup = "🔧 TEMA: Signal Filtering"
+tema_minBarsBetween = input.int(3, "Min Bars Between Signals", minval=1, maxval=20, group=tema_filterGroup)
+tema_useVolumeFilter = input.bool(false, "Volume Confirmation", group=tema_filterGroup)
+tema_volumeMultiplier = input.float(1.3, "Volume Multiplier", minval=1.0, maxval=3.0, step=0.1, group=tema_filterGroup)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 4: FUNCTION DEFINITIONS (GLOBAL SCOPE)
+// ═══════════════════════════════════════════════════════════════════════════════
+tema_func(src, length) =>
+    ema1 = ta.ema(src, length)
+    ema2 = ta.ema(ema1, length)
+    ema3 = ta.ema(ema2, length)
+    3 * ema1 - 3 * ema2 + ema3
+
+calcADX_func(len) =>
+    up = ta.change(high)
+    down = -ta.change(low)
+    plusDM = na(up) ? na : (up > down and up > 0 ? up : 0)
+    minusDM = na(down) ? na : (down > up and down > 0 ? down : 0)
+    trur = ta.rma(ta.tr, len)
+    plus = fixnan(100 * ta.rma(plusDM, len) / trur)
+    minus = fixnan(100 * ta.rma(minusDM, len) / trur)
+    sum = plus + minus
+    100 * ta.rma(math.abs(plus - minus) / (sum == 0 ? 1 : sum), len)
+
+detectAssetType_func() =>
+    sym = syminfo.ticker
+    pfx = syminfo.prefix
+    isCrypto = str.contains(sym, "BTC") or str.contains(sym, "ETH") or str.contains(sym, "USDT") or str.contains(pfx, "BINANCE") or str.contains(pfx, "COINBASE") or str.contains(pfx, "CRYPTO")
+    isForex = (str.length(sym) == 6 and not str.contains(sym, "BTC")) or str.contains(pfx, "FX") or str.contains(pfx, "OANDA") or str.contains(pfx, "FOREX")
+    isCommodity = str.contains(sym, "GOLD") or str.contains(sym, "OIL") or str.contains(sym, "SILVER") or str.contains(pfx, "COMEX")
+    isCrypto ? "Crypto" : isForex ? "Forex" : isCommodity ? "Commodity" : "Stock"
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 5: MA QWEN SYSTEM CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+qwen_timeframeInMinutes = timeframe.multiplier * (timeframe.isseconds ? 1.0/60 : timeframe.isminutes ? 1.0 : timeframe.isdaily ? 1440 : 0)
+qwen_barsPerHour = 60 / math.max(1, qwen_timeframeInMinutes)
+qwen_volLookbackBars = math.max(20, math.round(qwen_volLookbackHours * qwen_barsPerHour))
+
+qwen_pctReturn = (close - close[1]) / close[1]
+qwen_volatility = ta.stdev(qwen_pctReturn, math.floor(qwen_volLookbackBars))
+qwen_priceChange24h = (close / close[math.min(qwen_volLookbackBars, bar_index)] - 1)
+qwen_lowVol = qwen_volatility < 0.012 and math.abs(qwen_priceChange24h) < 0.008
+qwen_highVolMomentum = qwen_volatility > 0.035 and qwen_priceChange24h > 0.025
+qwen_panicSelling = qwen_priceChange24h < -0.03
+
+qwen_emaFast = ta.ema(close, 12)
+qwen_emaSlow = ta.ema(close, 26)
+qwen_rsi = ta.rsi(close, 14)
+qwen_volumeSpike = volume > ta.sma(volume, 30) * 1.3
+
+qwen_bbLength = qwen_volatility > 0.03 ? 14 : 24
+qwen_basisq = ta.sma(close, qwen_bbLength)
+qwen_devq = ta.stdev(close, qwen_bbLength)
+qwen_bbUpper = qwen_basisq + 2.1 * qwen_devq
+qwen_bbLower = qwen_basisq - 2.1 * qwen_devq
+
+var string qwen_mode = "neutral"
+if qwen_lowVol
+    qwen_mode := "mean_reversion"
+else if qwen_highVolMomentum or qwen_panicSelling
+    qwen_mode := "trend"
+else
+    qwen_mode := "neutral"
+
+qwen_longCondition = false
+qwen_shortCondition = false
+
+if qwen_mode == "mean_reversion"
+    qwen_longCondition := close <= qwen_bbLower and qwen_rsi < 28 and close < qwen_emaSlow
+    qwen_shortCondition := close >= qwen_bbUpper and qwen_rsi > 72 and close > qwen_emaSlow
+else if qwen_mode == "trend"
+    qwen_longCondition := (qwen_highVolMomentum or (qwen_panicSelling and qwen_rsi < 25 and qwen_volumeSpike)) and close > qwen_emaFast and qwen_emaFast > qwen_emaSlow
+    qwen_shortCondition := false
+else
+    qwen_longCondition := close > qwen_emaFast and qwen_emaFast > qwen_emaSlow and close > ta.vwap
+    qwen_shortCondition := close < qwen_emaFast and qwen_emaFast < qwen_emaSlow and close < ta.vwap
+
+qwen_lookbackBars = 5
+qwen_hadBuyPlotRecent = false
+for i = 1 to qwen_lookbackBars
+    qwen_hadBuyPlotRecent := qwen_hadBuyPlotRecent or (qwen_longCondition[i])
+
+qwen_hadSellPlotRecent = false
+for i = 1 to qwen_lookbackBars
+    qwen_hadSellPlotRecent := qwen_hadSellPlotRecent or (qwen_shortCondition[i])
+
+qwen_buyToPlot = qwen_longCondition and not qwen_hadBuyPlotRecent
+qwen_sellToPlot = qwen_shortCondition and not qwen_hadSellPlotRecent
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 6: AMA PRO TEMA SYSTEM CALCULATIONS (EXACT ORIGINAL LOGIC)
+// ═══════════════════════════════════════════════════════════════════════════════
+tema_assetType = tema_autoDetectAsset ? detectAssetType_func() : tema_manualAssetType
+
+tema_assetVolFactor = tema_assetType == "Crypto" ? 1.5 : tema_assetType == "Forex" ? 1.0 : tema_assetType == "Commodity" ? 1.2 : 0.8
+tema_assetTrendFactor = tema_assetType == "Crypto" ? 1.3 : tema_assetType == "Forex" ? 0.9 : tema_assetType == "Commodity" ? 1.1 : 1.0
+tema_assetMRFactor = tema_assetType == "Crypto" ? 0.7 : tema_assetType == "Forex" ? 1.2 : tema_assetType == "Commodity" ? 0.9 : 1.0
+
+tema_adxValue = calcADX_func(tema_adxLength)
+
+tema_atr = ta.atr(14)
+tema_atrPercent = (tema_atr / close) * 100
+tema_historicalATR = ta.sma(tema_atr, tema_volLookback)
+tema_atrRatio = tema_atr / tema_historicalATR
+tema_returns = math.log(close / close[1])
+tema_volatility_tema = ta.stdev(tema_returns, tema_volLookback) * math.sqrt(252) * 100
+tema_historicalVol = ta.sma(tema_volatility_tema, tema_volLookback)
+tema_volRatio = tema_volatility_tema / tema_historicalVol
+
+tema_ema20 = ta.ema(close, 20)
+tema_ema50 = ta.ema(close, 50)
+tema_ema200 = ta.ema(close, 200)
+tema_trendAlignment = (close > tema_ema20 and tema_ema20 > tema_ema50 and tema_ema50 > tema_ema200) ? 1 : (close < tema_ema20 and tema_ema20 < tema_ema50 and tema_ema50 < tema_ema200) ? -1 : 0
+tema_roc10 = ta.roc(close, 10)
+tema_roc20 = ta.roc(close, 20)
+tema_momentum = (tema_roc10 + tema_roc20) / 2
+
+tema_volRegime = tema_volRatio > 1.3 ? "High" : tema_volRatio < 0.7 ? "Low" : "Normal"
+tema_trendRegime = tema_adxValue > tema_adxThreshold ? "Trending" : "Ranging"
+tema_directionRegime = tema_trendAlignment > 0 ? "Bullish" : tema_trendAlignment < 0 ? "Bearish" : "Neutral"
+
+// Stable regime with confirmation - CRITICAL: Must match original exactly
+var string tema_stableRegime = "Neutral-Normal-Ranging"
+var int tema_regimeCounter = 0
+tema_currentRegime = tema_directionRegime + "-" + tema_volRegime + "-" + tema_trendRegime
+if tema_currentRegime != tema_stableRegime
+    tema_regimeCounter += 1
+    if tema_regimeCounter >= tema_regimeStability
+        tema_stableRegime := tema_currentRegime
+        tema_regimeCounter := 0
+else
+    tema_regimeCounter := 0
+
+tema_regimeIsBullish = str.contains(tema_stableRegime, "Bullish")
+tema_regimeIsBearish = str.contains(tema_stableRegime, "Bearish")
+tema_regimeIsHighVol = str.contains(tema_stableRegime, "High")
+tema_regimeIsLowVol = str.contains(tema_stableRegime, "Low")
+tema_regimeIsTrending = str.contains(tema_stableRegime, "Trending")
+tema_regimeIsRanging = str.contains(tema_stableRegime, "Ranging")
+
+// Sensitivity multiplier
+tema_sensitivityMult = tema_adaptiveSensitivity == "High" ? 1.5 : tema_adaptiveSensitivity == "Low" ? 0.5 : 1.0
+
+// Calculate adjustment factors
+tema_volAdjust = tema_regimeIsHighVol ? 0.7 : tema_regimeIsLowVol ? 1.3 : 1.0
+tema_trendAdjust = tema_regimeIsTrending ? 0.8 : 1.2
+tema_tfMultiplier = timeframe.isintraday ? (timeframe.multiplier <= 5 ? 0.8 : timeframe.multiplier <= 60 ? 1.0 : 1.2) : timeframe.isdaily ? 1.3 : 1.5
+tema_combinedAdjust = tema_volAdjust * tema_trendAdjust * tema_tfMultiplier * tema_sensitivityMult
+tema_adjustFactor = math.max(0.5, math.min(1.5, 1.0 / tema_combinedAdjust))
+
+// Calculate adaptive periods
+tema_fastRange = tema_emaFastMax - tema_emaFastMin
+tema_slowRange = tema_emaSlowMax - tema_emaSlowMin
+tema_rsiRange = tema_rsiMax - tema_rsiMin
+tema_bbRange = tema_bbLengthMax - tema_bbLengthMin
+tema_adaptiveEmaFastFloat = tema_emaFastMin + tema_fastRange * (1 - tema_adjustFactor)
+tema_adaptiveEmaSlowFloat = tema_emaSlowMin + tema_slowRange * (1 - tema_adjustFactor)
+
+// Ensure separation
+if tema_adaptiveEmaSlowFloat - tema_adaptiveEmaFastFloat < 6
+    tema_adaptiveEmaSlowFloat := tema_adaptiveEmaFastFloat + 6
+
+// RSI adaptive period
+tema_rsiTrendFactor = tema_regimeIsTrending ? 0.7 : 1.3
+tema_rsiVolFactor = tema_regimeIsHighVol ? 0.8 : 1.2
+tema_adaptiveRsiFloat = tema_rsiMin + tema_rsiRange * tema_rsiTrendFactor * tema_rsiVolFactor * tema_sensitivityMult
+tema_adaptiveRsiFloat := math.max(tema_rsiMin, math.min(tema_rsiMax, tema_adaptiveRsiFloat))
+
+// BB adaptive period
+tema_bbVolFactor = tema_regimeIsHighVol ? 0.6 : tema_regimeIsLowVol ? 1.4 : 1.0
+tema_adaptiveBBFloat = tema_bbLengthMin + tema_bbRange * tema_bbVolFactor * tema_sensitivityMult
+tema_adaptiveBBFloat := math.max(tema_bbLengthMin, math.min(tema_bbLengthMax, tema_adaptiveBBFloat))
+
+// PRE-CALCULATE TEMA VALUES FOR DIFFERENT PERIODS
+tema_8 = tema_func(close, 8)
+tema_10 = tema_func(close, 10)
+tema_12 = tema_func(close, 12)
+tema_14 = tema_func(close, 14)
+tema_16 = tema_func(close, 16)
+tema_18 = tema_func(close, 18)
+tema_21 = tema_func(close, 21)
+
+tema_26 = tema_func(close, 26)
+tema_30 = tema_func(close, 30)
+tema_34 = tema_func(close, 34)
+tema_38 = tema_func(close, 38)
+tema_42 = tema_func(close, 42)
+tema_47 = tema_func(close, 47)
+tema_55 = tema_func(close, 55)
+
+// RSI values
+tema_rsi_10 = ta.rsi(close, 10)
+tema_rsi_12 = ta.rsi(close, 12)
+tema_rsi_14 = ta.rsi(close, 14)
+tema_rsi_16 = ta.rsi(close, 16)
+tema_rsi_18 = ta.rsi(close, 18)
+tema_rsi_21 = ta.rsi(close, 21)
+
+// SELECT APPROPRIATE TEMA BASED ON ADAPTIVE CALCULATION
+tema_temaFast = tema_enableAdaptive ? (tema_adaptiveEmaFastFloat <= 9 ? tema_8 : tema_adaptiveEmaFastFloat <= 11 ? tema_10 : tema_adaptiveEmaFastFloat <= 13 ? tema_12 : tema_adaptiveEmaFastFloat <= 15 ? tema_14 : tema_adaptiveEmaFastFloat <= 17 ? tema_16 : tema_adaptiveEmaFastFloat <= 19 ? tema_18 : tema_21) : tema_func(close, tema_manualEmaFast)
+tema_temaSlow = tema_enableAdaptive ? (tema_adaptiveEmaSlowFloat <= 28 ? tema_26 : tema_adaptiveEmaSlowFloat <= 32 ? tema_30 : tema_adaptiveEmaSlowFloat <= 36 ? tema_34 : tema_adaptiveEmaSlowFloat <= 40 ? tema_38 : tema_adaptiveEmaSlowFloat <= 44 ? tema_42 : tema_adaptiveEmaSlowFloat <= 51 ? tema_47 : tema_55) : tema_func(close, tema_manualEmaSlow)
+tema_rsi = tema_enableAdaptive ? (tema_adaptiveRsiFloat <= 11 ? tema_rsi_10 : tema_adaptiveRsiFloat <= 13 ? tema_rsi_12 : tema_adaptiveRsiFloat <= 15 ? tema_rsi_14 : tema_adaptiveRsiFloat <= 17 ? tema_rsi_16 : tema_adaptiveRsiFloat <= 19 ? tema_rsi_18 : tema_rsi_21) : ta.rsi(close, tema_manualRsi)
+
+// Bollinger Bands
+tema_bbPeriod = tema_enableAdaptive ? math.round(math.max(tema_bbLengthMin, math.min(tema_bbLengthMax, tema_adaptiveBBFloat))) : tema_manualBbLength
+tema_bbMultiplier = tema_regimeIsHighVol ? 2.5 : tema_regimeIsLowVol ? 1.8 : 2.1
+tema_bbBasis = ta.sma(close, tema_bbPeriod)
+tema_bbDev = ta.stdev(close, tema_bbPeriod)
+tema_bbUpper = tema_bbBasis + tema_bbMultiplier * tema_bbDev
+tema_bbLower = tema_bbBasis - tema_bbMultiplier * tema_bbDev
+
+// Adaptive RSI Thresholds
+tema_lookbackPeriod = 50
+tema_rsiLowest = ta.lowest(tema_rsi, tema_lookbackPeriod)
+tema_rsiHighest = ta.highest(tema_rsi, tema_lookbackPeriod)
+tema_rsiRange1 = tema_rsiHighest - tema_rsiLowest
+float tema_rsiOversold = na
+float tema_rsiOverbought = na
+
+tema_useAdaptiveThresholds = tema_enableAdaptive and tema_rsiRange1 > 20 and tema_rsiRange1 < 80
+if tema_useAdaptiveThresholds
+    tema_rsiLowerThreshold = tema_rsiLowest + tema_rsiRange * 0.2
+    tema_rsiUpperThreshold = tema_rsiHighest - tema_rsiRange * 0.2
+    if tema_regimeIsHighVol
+        tema_rsiLowerThreshold := tema_rsiLowerThreshold * 0.9
+        tema_rsiUpperThreshold := tema_rsiUpperThreshold * 1.1
+    tema_rsiOversold := math.max(25, math.min(35, tema_rsiLowerThreshold))
+    tema_rsiOverbought := math.max(65, math.min(75, tema_rsiUpperThreshold))
+else
+    tema_rsiOversold := 30
+    tema_rsiOverbought := 70
+
+// Volume
+tema_vwapValue = ta.vwap(close)
+tema_volumeMA = ta.sma(volume, 30)
+tema_volumeSpike = volume > tema_volumeMA * tema_volumeMultiplier
+
+// Strategy Logic
+var string tema_strategyMode = "balanced"
+if tema_enableAdaptive
+    if tema_regimeIsRanging and tema_regimeIsLowVol
+        tema_strategyMode := "mean_reversion"
+    else if tema_regimeIsTrending and tema_regimeIsHighVol
+        tema_strategyMode := "trend_following"
+    else
+        tema_strategyMode := "balanced"
+
+tema_longCondition = false
+tema_shortCondition = false
+
+if tema_strategyMode == "mean_reversion"
+    tema_longCondition := ta.crossover(tema_temaFast, tema_temaSlow)
+    tema_shortCondition := ta.crossunder(tema_temaFast, tema_temaSlow)
+else if tema_strategyMode == "trend_following"
+    tema_longCondition := ta.crossover(tema_temaFast, tema_temaSlow)
+    tema_shortCondition := ta.crossunder(tema_temaFast, tema_temaSlow)
+else
+    tema_longCondition := ta.crossover(tema_temaFast, tema_temaSlow)
+    tema_shortCondition := ta.crossunder(tema_temaFast, tema_temaSlow)
+
+// Apply volume filter
+if tema_useVolumeFilter
+    tema_longCondition := tema_longCondition and tema_volumeSpike
+    tema_shortCondition := tema_shortCondition and tema_volumeSpike
+
+// Signal Filtering
+var int tema_barsSinceLastLong = 999
+var int tema_barsSinceLastShort = 999
+if tema_longCondition
+    tema_barsSinceLastLong := 0
+else
+    tema_barsSinceLastLong += 1
+if tema_shortCondition
+    tema_barsSinceLastShort := 0
+else
+    tema_barsSinceLastShort += 1
+
+tema_longValid = tema_longCondition and tema_barsSinceLastLong >= tema_minBarsBetween
+tema_shortValid = tema_shortCondition and tema_barsSinceLastShort >= tema_minBarsBetween
+
+if tema_longValid and tema_shortValid
+    if tema_regimeIsBullish
+        tema_shortValid := false
+    else if tema_regimeIsBearish
+        tema_longValid := false
+    else
+        if tema_momentum > 0
+            tema_shortValid := false
+        else
+            tema_longValid := false
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 7: VISUALIZATION (GLOBAL SCOPE - NO IF BLOCKS)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Qwen Visuals
+qwen_buyColor = i_enableQwen ? #0000ff : na
+qwen_sellColor = i_enableQwen ? #ff00fb : na
+plotshape(i_enableQwen and qwen_buyToPlot, 'Qwen BUY', shape.triangleup, location.belowbar, qwen_buyColor, text = 'QL', textcolor = qwen_buyColor, size=size.tiny)
+plotshape(i_enableQwen and qwen_sellToPlot, 'Qwen SELL', shape.triangledown, location.abovebar, qwen_sellColor, text = 'QS', textcolor = qwen_sellColor, size=size.tiny)
+
+qwen_candleColor = i_enableQwen ? (qwen_buyToPlot ? #0000ff : qwen_sellToPlot ? #ff00fb : na) : na
+barcolor(qwen_candleColor)
+
+// TEMA Visuals - PLOTS ALWAYS EXECUTE (condition controls visibility via color/na)
+plot(i_enableTEMA ? tema_temaFast : na, "TEMA Fast", color=i_enableTEMA ? color.new(color.blue, 0) : na, linewidth=2)
+plot(i_enableTEMA ? tema_temaSlow : na, "TEMA Slow", color=i_enableTEMA ? color.new(color.red, 0) : na, linewidth=2)
+plot(i_enableTEMA ? tema_bbUpper : na, "BB Upper", color=i_enableTEMA ? #ffee00 : na, display = display.none)
+plot(i_enableTEMA ? tema_bbLower : na, "BB Lower", color=i_enableTEMA ? #ffee00 : na, display = display.none)
+
+plotshape(i_enableTEMA and tema_longValid, "TEMA BUY", shape.triangleup, location.belowbar, color.new(color.green, 0), text="L", textcolor=color.white, size=size.tiny)
+plotshape(i_enableTEMA and tema_shortValid, "TEMA SELL", shape.triangledown, location.abovebar, color.new(color.red, 0), text="S", textcolor=color.white, size=size.tiny)
+
+plotshape(i_enableTEMA and tema_longCondition, "TEMA Long Cond", shape.circle, location.belowbar, #0004ff, size=size.tiny)
+plotshape(i_enableTEMA and tema_shortCondition, "TEMA Short Cond", shape.circle, location.abovebar, #f700e7, size=size.tiny)
+
+tema_candleColor = i_enableTEMA ? (tema_longCondition ? #0004ff : tema_shortCondition ? #f700e7 : na) : na
+barcolor(tema_candleColor)
+
+// Info Table
+if i_enableTEMA and tema_showRegimeInfo
+    var table tema_infoTable = table.new(position.top_right, 2, 12, bgcolor=color.new(color.black, 85), frame_color=color.gray, frame_width=1, border_width=1)
+    if barstate.islast
+        table.cell(tema_infoTable, 0, 0, "Parameter", text_color=color.white, bgcolor=color.new(color.blue, 70), text_size=size.small)
+        table.cell(tema_infoTable, 1, 0, "Value", text_color=color.white, bgcolor=color.new(color.blue, 70), text_size=size.small)
+        table.cell(tema_infoTable, 0, 1, "Asset Type", text_color=color.white, text_size=size.small)
+        table.cell(tema_infoTable, 1, 1, tema_assetType, text_color=color.yellow, text_size=size.small)
+        table.cell(tema_infoTable, 0, 2, "Market Regime", text_color=color.white, text_size=size.small)
+        table.cell(tema_infoTable, 1, 2, tema_stableRegime, text_color=color.yellow, text_size=size.small)
+        table.cell(tema_infoTable, 0, 3, "Strategy Mode", text_color=color.white, text_size=size.small)
+        tema_modeColor = tema_strategyMode == "trend_following" ? color.green : tema_strategyMode == "mean_reversion" ? color.blue : color.orange
+        table.cell(tema_infoTable, 1, 3, tema_strategyMode, text_color=tema_modeColor, text_size=size.small)
+        table.cell(tema_infoTable, 0, 4, "TEMA Fast", text_color=color.white, text_size=size.small)
+        table.cell(tema_infoTable, 1, 4, str.tostring(math.round(tema_adaptiveEmaFastFloat)), text_color=color.aqua, text_size=size.small)
+        table.cell(tema_infoTable, 0, 5, "TEMA Slow", text_color=color.white, text_size=size.small)
+        table.cell(tema_infoTable, 1, 5, str.tostring(math.round(tema_adaptiveEmaSlowFloat)), text_color=color.aqua, text_size=size.small)
+        table.cell(tema_infoTable, 0, 6, "RSI Period", text_color=color.white, text_size=size.small)
+        table.cell(tema_infoTable, 1, 6, str.tostring(math.round(tema_adaptiveRsiFloat)), text_color=color.aqua, text_size=size.small)
+        table.cell(tema_infoTable, 0, 7, "BB Period", text_color=color.white, text_size=size.small)
+        table.cell(tema_infoTable, 1, 7, str.tostring(tema_bbPeriod), text_color=color.aqua, text_size=size.small)
+        table.cell(tema_infoTable, 0, 8, "ADX", text_color=color.white, text_size=size.small)
+        tema_adxColorVal = tema_adxValue > tema_adxThreshold ? color.green : color.red
+        table.cell(tema_infoTable, 1, 8, str.tostring(math.round(tema_adxValue, 1)), text_color=tema_adxColorVal, text_size=size.small)
+        table.cell(tema_infoTable, 0, 9, "ATR %", text_color=color.white, text_size=size.small)
+        table.cell(tema_infoTable, 1, 9, str.tostring(math.round(tema_atrPercent, 2)) + "%", text_color=color.aqua, text_size=size.small)
+        table.cell(tema_infoTable, 0, 10, "RSI", text_color=color.white, text_size=size.small)
+        tema_rsiColorVal = tema_rsi < tema_rsiOversold ? color.green : tema_rsi > tema_rsiOverbought ? color.red : color.white
+        table.cell(tema_infoTable, 1, 10, str.tostring(math.round(tema_rsi, 1)), text_color=tema_rsiColorVal, text_size=size.small)
+        table.cell(tema_infoTable, 0, 11, "Volatility", text_color=color.white, text_size=size.small)
+        tema_volColorVal = tema_regimeIsHighVol ? color.red : tema_regimeIsLowVol ? color.green : color.white
+        table.cell(tema_infoTable, 1, 11, tema_volRegime, text_color=tema_volColorVal, text_size=size.small)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION 8: ALERTS (GLOBAL SCOPE - PRESERVE ORIGINAL BEHAVIOR)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Qwen Alerts
+alertcondition(i_enableQwen and (qwen_buyToPlot or qwen_sellToPlot), title="Qwen", message="Long-Sell")
+alertcondition(i_enableQwen and (qwen_buyToPlot[1] or qwen_sellToPlot[1]), title="QwenPre", message="Long-Sell-Pre")
+
+// TEMA Alerts - CRITICAL: Regime change tracking must persist correctly
+var string tema_previousRegime = tema_stableRegime
+tema_regimeChanged = tema_stableRegime != tema_previousRegime
+tema_previousRegime := tema_stableRegime
+
+alertcondition(i_enableTEMA and tema_longValid, title="TEMA Long Signal", message="LONG Signal (TEMA)")
+alertcondition(i_enableTEMA and tema_shortValid, title="TEMA Short Signal", message="SHORT Signal (TEMA)")
+alertcondition(i_enableTEMA and tema_regimeChanged and tema_regimeAlerts, title="TEMA Regime Change", message="Regime Changed")
+alertcondition(i_enableTEMA and (tema_longValid or tema_shortValid), title="TEMA Any Signal", message="Trading Signal (TEMA)")

@@ -222,6 +222,10 @@
                                     <span>Daily Chg</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
+                                <th class="sortable scanner-col hidden" data-col="scanner">
+                                    <span>Scanner</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                                 <th>Timestamp</th>
                                 <th>Actions</th>
                             </tr>
@@ -276,6 +280,16 @@
                         <div class="index-chips hidden" id="indexChips">
                             <!-- Hidden but kept for JS compatibility if needed temporarily -->
                             <button class="index-chip active" data-index="CRYPTO">Crypto</button>
+                        </div>
+
+                        <div class="config-section">
+                            <label class="config-label">Scanner Type</label>
+                            <div class="scanner-type-chips" id="scannerTypeChips">
+                                <button class="scanner-chip active" data-scanner="ama_pro">AMA Pro</button>
+                                <button class="scanner-chip" data-scanner="qwen">Qwen</button>
+                                <button class="scanner-chip" data-scanner="both">Both</button>
+                            </div>
+                            <p class="config-hint">Select which scanner strategy to use for signal detection</p>
                         </div>
 
                         <div class="config-section">

@@ -1,0 +1,89 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © sahooss
+
+//@version=6
+indicator("MA Qwen", shorttitle="MA Qwen", overlay=true)
+
+// === INPUTS ===
+i_volLookbackHours = input.int(24, "Volatility Lookback (hours)", minval=12)
+
+// === Timeframe Handling ===
+timeframeInMinutes = timeframe.multiplier * (timeframe.isseconds ? 1.0/60 : timeframe.isminutes ? 1.0 : timeframe.isdaily ? 1440 : 0)
+barsPerHour = 60 / math.max(1, timeframeInMinutes)
+volLookbackBars = math.max(20, math.round(i_volLookbackHours * barsPerHour))
+
+// === Volatility & Regime ===
+pctReturn = (close - close[1]) / close[1]
+volatility = ta.stdev(pctReturn, math.floor(volLookbackBars))
+priceChange24h = (close / close[math.min(volLookbackBars, bar_index)] - 1)
+lowVol = volatility < 0.012 and math.abs(priceChange24h) < 0.008
+highVolMomentum = volatility > 0.035 and priceChange24h > 0.025
+panicSelling = priceChange24h < -0.03
+
+// === Indicators ===
+emaFast = ta.ema(close, 12)
+emaSlow = ta.ema(close, 26)
+rsi = ta.rsi(close, 14)
+volumeSpike = volume > ta.sma(volume, 30) * 1.3
+
+// Bollinger Bands (adaptive)
+bbLength = volatility > 0.03 ? 14 : 24
+basisq = ta.sma(close, bbLength)
+devq = ta.stdev(close, bbLength)
+bbUpper = basisq + 2.1 * devq
+bbLower = basisq - 2.1 * devq
+
+// === Strategy Logic ===
+var string mode = "neutral"
+if lowVol
+    mode := "mean_reversion"
+else if highVolMomentum or panicSelling
+    mode := "trend"
+else
+    mode := "neutral"
+
+longCondition = false
+shortCondition = false
+
+if mode == "mean_reversion"
+    longCondition := close <= bbLower and rsi < 28 and close < emaSlow
+    shortCondition := close >= bbUpper and rsi > 72 and close > emaSlow
+else if mode == "trend"
+    longCondition := (highVolMomentum or (panicSelling and rsi < 25 and volumeSpike)) and close > emaFast and emaFast > emaSlow
+    shortCondition := false  // Conservative: no shorts in panic
+else
+    longCondition := close > emaFast and emaFast > emaSlow and close > ta.vwap
+    shortCondition := close < emaFast and emaFast < emaSlow and close < ta.vwap
+
+// === TRACK PREVIOUS PLOTSHAPES TO PREVENT CONSECUTIVE SIGNALS ===
+// Check if there was a BUY plotshape in the last 5 bars
+lookbackBars = 5
+hadBuyPlotRecent = false
+for i = 1 to lookbackBars
+    hadBuyPlotRecent := hadBuyPlotRecent or (longCondition[i])
+
+// Check if there was a SELL plotshape in the last 5 bars
+hadSellPlotRecent = false
+for i = 1 to lookbackBars
+    hadSellPlotRecent := hadSellPlotRecent or (shortCondition[i])
+
+// MODIFIED: Only plot BUY when conditions are met AND no recent BUY plotshape
+buyToPlot = longCondition and not hadBuyPlotRecent
+plotshape(buyToPlot, 'BUY', shape.triangleup, location.belowbar, #0000ff, text = 'QL', textcolor = #0000ff, size=size.tiny)
+
+sellToPlot = shortCondition and not hadSellPlotRecent
+plotshape(sellToPlot, 'SELL', shape.triangledown, location.abovebar, #ff00fb, text = 'QS', textcolor = #ff00fb, size=size.tiny)
+
+// Apply colors based on conditions (priority order)
+var color candleColor = na
+if buyToPlot
+    candleColor := #0000ff
+else if sellToPlot
+    candleColor := #ff00fb
+else
+    candleColor := na
+barcolor(candleColor)
+
+// ───────────── ALERTS ─────────────
+alertcondition(buyToPlot or sellToPlot, title="Qwen", message="Long-Sell")
+alertcondition(buyToPlot[1] or sellToPlot[1], title="QwenPre", message="Long-Sell-Pre")

@@ -7,6 +7,7 @@ let allResults = [];
 let scanRunning = false;
 let logPollInterval = null;
 let currentSort = { col: null, asc: true };
+let currentScannerType = 'ama_pro';
 
 // ── DOM REFS ──
 const $ = (sel) => document.querySelector(sel);
@@ -212,6 +213,9 @@ function renderResults() {
     empty.style.display = 'none';
     countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
 
+    const showScannerCol = currentScannerType === 'both';
+    toggleScannerColumn(showScannerCol);
+
     body.innerHTML = filtered.map((r, i) => {
         const sigCls = r.Signal === 'LONG' ? 'long' : 'short';
         const sigIcon = r.Signal === 'LONG' ? 'fa-arrow-up' : 'fa-arrow-down';
@@ -221,6 +225,8 @@ function renderResults() {
         const name = r['Crypto Name'] || '—';
         const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '1 day': '1D', '1 week': '1W' };
         const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
+        const scannerVal = r.Scanner || '';
+        const scannerBadgeCls = scannerVal === 'Both' ? 'scanner-both' : scannerVal === 'Qwen' ? 'scanner-qwen' : 'scanner-ama';
 
         return `
             <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
@@ -235,6 +241,7 @@ function renderResults() {
                 <td class="mono">${r.Angle || '—'}</td>
                 <td class="mono">${r['TEMA Gap'] || '—'}</td>
                 <td class="${changeCls}">${changeStr}</td>
+                ${showScannerCol ? `<td><span class="scanner-badge ${scannerBadgeCls}">${scannerVal}</span></td>` : ''}
                 <td class="mono">${r.Timestamp || '—'}</td>
                 <td>
                     <button class="chart-btn" onclick="openChart('${name}', '${r.Timeperiod}')">
@@ -297,6 +304,16 @@ function initScannerControls() {
         chip.addEventListener('click', () => chip.classList.toggle('active'));
     });
 
+    // Scanner type chip toggles (radio-style: only one active)
+    $$('.scanner-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('.scanner-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            currentScannerType = chip.dataset.scanner;
+            toggleScannerColumn(currentScannerType === 'both');
+        });
+    });
+
     // Timeframe chip toggles
     $$('.tf-chip').forEach(chip => {
         chip.addEventListener('click', () => chip.classList.toggle('active'));
@@ -326,6 +343,13 @@ function initScannerControls() {
     });
 }
 
+function toggleScannerColumn(show) {
+    $$('.scanner-col').forEach(el => {
+        if (show) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+    });
+}
+
 async function runScan() {
     if (scanRunning) return;
 
@@ -333,6 +357,7 @@ async function runScan() {
     const timeframes = Array.from($$('.tf-chip.active')).map(c => c.dataset.tf);
     const adaptation_speed = $('#adaptationSpeed').value;
     const min_bars_between = parseInt($('#minBarsBetween').value) || 3;
+    const scanner_type = currentScannerType;
 
     if (timeframes.length === 0) {
         showToast('Select at least one timeframe', 'warning');
@@ -356,7 +381,8 @@ async function runScan() {
     updateStats();
 
     // Add scan start log
-    addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
+    const scannerLabel = scanner_type === 'both' ? 'AMA Pro + Qwen' : scanner_type === 'qwen' ? 'Qwen' : 'AMA Pro';
+    addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Scanner: ${scannerLabel} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
 
     // Start log polling
     startLogPolling();
@@ -375,11 +401,12 @@ async function runScan() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                indices: ["CRYPTO"], // Required by model but logic uses crypto_count
+                indices: ["CRYPTO"],
                 timeframes,
                 adaptation_speed,
                 min_bars_between,
-                crypto_count
+                crypto_count,
+                scanner_type
             })
         });
 
@@ -514,7 +541,8 @@ function initFilterControls() {
                 signal: 'Signal',
                 angle: 'Angle',
                 temagap: 'TEMA Gap',
-                change: 'Daily Change'
+                change: 'Daily Change',
+                scanner: 'Scanner'
             };
             const col = colMap[th.dataset.col];
             if (currentSort.col === col) {
@@ -611,10 +639,16 @@ function exportCSV() {
         showToast('No data to export', 'warning');
         return;
     }
-    const headers = ['Index', 'Timeframe', 'Signal', 'Angle', 'Daily Change', 'Timestamp'];
-    const rows = allResults.map(r => [
-        r['Crypto Name'], r.Timeperiod, r.Signal, r.Angle, r['Daily Change'], r.Timestamp
-    ]);
+    const hasScanner = allResults.some(r => r.Scanner);
+    const headers = hasScanner
+        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'Daily Change', 'Scanner', 'Timestamp']
+        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'Daily Change', 'Timestamp'];
+    const rows = allResults.map(r => {
+        const base = [r['Crypto Name'], r.Timeperiod, r.Signal, r.Angle, r['TEMA Gap'], r['Daily Change']];
+        if (hasScanner) base.push(r.Scanner || '');
+        base.push(r.Timestamp);
+        return base;
+    });
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);

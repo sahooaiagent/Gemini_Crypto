@@ -508,6 +508,244 @@ def apply_ama_pro_tema(df, tf_input="1 day", **kwargs):
         return None, None, None
 
 # =============================================================================
+# MA QWEN LOGIC — Faithful Port of Pine Script
+# =============================================================================
+
+def calculate_rsi(series, length=14):
+    """RSI matching Pine Script ta.rsi"""
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta).where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1/length, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/length, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return (100 - (100 / (1 + rs))).fillna(50)
+
+def calculate_vwap(df):
+    """
+    Session VWAP matching TradingView ta.vwap for crypto.
+    Resets at UTC midnight (00:00) each day.
+    """
+    typical_price = (df['high'] + df['low'] + df['close']) / 3
+    dates = df.index.date
+    vwap = pd.Series(np.nan, index=df.index)
+
+    cum_tp_vol = 0.0
+    cum_vol = 0.0
+    prev_date = None
+
+    for i in range(len(df)):
+        current_date = dates[i]
+        if current_date != prev_date:
+            cum_tp_vol = 0.0
+            cum_vol = 0.0
+            prev_date = current_date
+
+        cum_tp_vol += typical_price.iloc[i] * df['volume'].iloc[i]
+        cum_vol += df['volume'].iloc[i]
+
+        if cum_vol > 0:
+            vwap.iloc[i] = cum_tp_vol / cum_vol
+
+    return vwap
+
+def apply_qwen_scanner(df, tf_input="1 day", **kwargs):
+    """
+    Applies the MA Qwen indicator logic (matching QwenPre alert):
+    1. Volatility & Regime detection (lowVol, highVolMomentum, panicSelling)
+    2. Indicators: EMA(12), EMA(26), RSI(14), Volume Spike, Bollinger Bands
+    3. Strategy modes: mean_reversion, trend, neutral
+    4. longCondition / shortCondition computed for all bars
+    5. buyToPlot / sellToPlot with 5-bar dedup (no repeated QL/QS within 5 bars)
+    6. Signal = buyToPlot or sellToPlot on the latest CLOSED candle (= QwenPre)
+
+    Returns: (signal, None, None) — angle/tema_gap not applicable for Qwen
+    """
+    if df is None or len(df) < 100:
+        return None, None, None
+
+    # Drop the last row (current forming/incomplete candle)
+    df = df.iloc[:-1].copy()
+
+    if len(df) < 100:
+        return None, None, None
+
+    try:
+        # === INPUTS ===
+        i_volLookbackHours = 24
+
+        # === Timeframe Handling ===
+        tf_clean = tf_input.lower().strip()
+        if 'min' in tf_clean:
+            try:
+                timeframe_in_minutes = int(tf_clean.replace('min', ''))
+            except:
+                timeframe_in_minutes = 15
+        elif 'hr' in tf_clean:
+            try:
+                timeframe_in_minutes = int(tf_clean.replace('hr', '')) * 60
+            except:
+                timeframe_in_minutes = 60
+        elif 'day' in tf_clean:
+            timeframe_in_minutes = 1440
+        elif 'week' in tf_clean:
+            timeframe_in_minutes = 10080
+        else:
+            timeframe_in_minutes = 15
+
+        bars_per_hour = 60 / max(1, timeframe_in_minutes)
+        vol_lookback_bars = max(20, round(i_volLookbackHours * bars_per_hour))
+
+        # === Volatility & Regime ===
+        df['pctReturn'] = (df['close'] - df['close'].shift(1)) / df['close'].shift(1)
+        df['volatility_q'] = df['pctReturn'].rolling(window=vol_lookback_bars, min_periods=1).std()
+
+        # priceChange24h = close / close[vol_lookback_bars] - 1
+        shift_bars = min(vol_lookback_bars, len(df) - 1)
+        df['priceChange24h'] = df['close'] / df['close'].shift(shift_bars) - 1
+        df['priceChange24h'] = df['priceChange24h'].fillna(0)
+
+        df['lowVol'] = (df['volatility_q'] < 0.012) & (df['priceChange24h'].abs() < 0.008)
+        df['highVolMomentum'] = (df['volatility_q'] > 0.035) & (df['priceChange24h'] > 0.025)
+        df['panicSelling'] = df['priceChange24h'] < -0.03
+
+        # === Indicators ===
+        df['emaFast12'] = calculate_ema(df['close'], 12)
+        df['emaSlow26'] = calculate_ema(df['close'], 26)
+        df['rsi'] = calculate_rsi(df['close'], 14)
+        df['volumeSMA30'] = df['volume'].rolling(window=30, min_periods=1).mean()
+        df['volumeSpike'] = df['volume'] > df['volumeSMA30'] * 1.3
+
+        # Bollinger Bands (adaptive)
+        n = len(df)
+        bb_upper = pd.Series(np.nan, index=df.index)
+        bb_lower = pd.Series(np.nan, index=df.index)
+
+        for i in range(max(24, 0), n):
+            vol_val = df['volatility_q'].iloc[i] if not pd.isna(df['volatility_q'].iloc[i]) else 0
+            bb_length = 14 if vol_val > 0.03 else 24
+            start = max(0, i - bb_length + 1)
+            window = df['close'].iloc[start:i + 1]
+            basis = window.mean()
+            dev = window.std()
+            if not pd.isna(dev):
+                bb_upper.iloc[i] = basis + 2.1 * dev
+                bb_lower.iloc[i] = basis - 2.1 * dev
+
+        df['bbUpper'] = bb_upper
+        df['bbLower'] = bb_lower
+
+        # VWAP (only for neutral mode)
+        df['vwap'] = calculate_vwap(df)
+
+        # === Strategy Logic ===
+        # Determine mode for each bar
+        modes = []
+        for i in range(n):
+            if df['lowVol'].iloc[i]:
+                modes.append('mean_reversion')
+            elif df['highVolMomentum'].iloc[i] or df['panicSelling'].iloc[i]:
+                modes.append('trend')
+            else:
+                modes.append('neutral')
+        df['mode'] = modes
+
+        # =================================================================
+        # COMPUTE longCondition / shortCondition FOR ALL BARS
+        # =================================================================
+        # We need all bars to apply the 5-bar deduplication that
+        # determines buyToPlot / sellToPlot (matching Pine Script).
+        long_cond = np.zeros(n, dtype=bool)
+        short_cond = np.zeros(n, dtype=bool)
+
+        close_vals = df['close'].values
+        ema_fast_vals = df['emaFast12'].values
+        ema_slow_vals = df['emaSlow26'].values
+        rsi_vals = df['rsi'].values
+        bb_up_vals = df['bbUpper'].values
+        bb_lo_vals = df['bbLower'].values
+        vwap_vals = df['vwap'].values
+        high_vol_mom_vals = df['highVolMomentum'].values
+        panic_vals = df['panicSelling'].values
+        vol_spike_vals = df['volumeSpike'].values
+
+        for i in range(1, n):
+            m = modes[i]
+            if m == 'mean_reversion':
+                if not np.isnan(bb_lo_vals[i]) and not np.isnan(rsi_vals[i]):
+                    long_cond[i] = (close_vals[i] <= bb_lo_vals[i]) and (rsi_vals[i] < 28) and (close_vals[i] < ema_slow_vals[i])
+                    short_cond[i] = (close_vals[i] >= bb_up_vals[i]) and (rsi_vals[i] > 72) and (close_vals[i] > ema_slow_vals[i])
+            elif m == 'trend':
+                if high_vol_mom_vals[i] or (panic_vals[i] and rsi_vals[i] < 25 and vol_spike_vals[i]):
+                    long_cond[i] = (close_vals[i] > ema_fast_vals[i]) and (ema_fast_vals[i] > ema_slow_vals[i])
+                short_cond[i] = False  # Conservative: no shorts in panic
+            else:  # neutral
+                if not np.isnan(vwap_vals[i]):
+                    long_cond[i] = (close_vals[i] > ema_fast_vals[i]) and (ema_fast_vals[i] > ema_slow_vals[i]) and (close_vals[i] > vwap_vals[i])
+                    short_cond[i] = (close_vals[i] < ema_fast_vals[i]) and (ema_fast_vals[i] < ema_slow_vals[i]) and (close_vals[i] < vwap_vals[i])
+
+        # =================================================================
+        # 5-BAR DEDUPLICATION — matches Pine Script buyToPlot / sellToPlot
+        # =================================================================
+        # buyToPlot = longCondition AND no longCondition in prior 5 bars
+        # This IS part of the indicator logic (not just visual).
+        lookback_bars = 5
+        last_idx = n - 1
+
+        # Check buyToPlot on the last closed candle
+        buy_to_plot = False
+        if long_cond[last_idx]:
+            had_recent_buy = False
+            for j in range(1, min(lookback_bars + 1, last_idx + 1)):
+                if long_cond[last_idx - j]:
+                    had_recent_buy = True
+                    break
+            buy_to_plot = not had_recent_buy
+
+        # Check sellToPlot on the last closed candle
+        sell_to_plot = False
+        if short_cond[last_idx]:
+            had_recent_sell = False
+            for j in range(1, min(lookback_bars + 1, last_idx + 1)):
+                if short_cond[last_idx - j]:
+                    had_recent_sell = True
+                    break
+            sell_to_plot = not had_recent_sell
+
+        # =================================================================
+        # SIGNAL — matches QwenPre alert (buyToPlot[1] / sellToPlot[1])
+        # =================================================================
+        # We dropped the forming candle already, so df.iloc[-1] IS the
+        # "previous closed candle" = [1] from the current forming bar.
+        signal = None
+        if buy_to_plot:
+            signal = "LONG"
+        elif sell_to_plot:
+            signal = "SHORT"
+
+        if signal:
+            last_ts = df.index[-1]
+            logging.info(f"  >>> Qwen {signal} signal on latest closed candle {last_ts}")
+
+        # Debug logging for the last candle
+        logging.info(
+            f"  Qwen debug | mode={modes[last_idx]} | "
+            f"close={close_vals[last_idx]:.4f} | "
+            f"emaFast={ema_fast_vals[last_idx]:.4f} emaSlow={ema_slow_vals[last_idx]:.4f} | "
+            f"rsi={rsi_vals[last_idx]:.2f} | "
+            f"longCond={long_cond[last_idx]} shortCond={short_cond[last_idx]} | "
+            f"buyToPlot={buy_to_plot} sellToPlot={sell_to_plot}"
+        )
+
+        return signal, None, None
+
+    except Exception as e:
+        logging.error(f"Error in Qwen calculation: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
+        return None, None, None
+
+# =============================================================================
 # MAIN SCAN ENTRY POINT
 # =============================================================================
 
@@ -515,37 +753,132 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     """
     Scans a single symbol across all requested timeframes.
     Uses a semaphore to limit concurrent requests.
+    Supports scanner_type: 'ama_pro', 'qwen', or 'both'.
     """
     adaptation_speed = kwargs.get('adaptation_speed', 'Medium')
     min_bars_between = kwargs.get('min_bars_between', 3)
-    
+    scanner_type = kwargs.get('scanner_type', 'ama_pro')
+
+    run_ama = scanner_type in ('ama_pro', 'both')
+    run_qwen = scanner_type in ('qwen', 'both')
+
     async with semaphore:
         for tf in timeframes:
             try:
                 df = await fetch_binance_data(symbol, tf)
-                if df is not None and len(df) >= 200:
-                    # Run CPU-intensive calculation in the thread pool to avoid blocking event loop
-                    loop = asyncio.get_event_loop()
+                if df is None:
+                    continue
+
+                loop = asyncio.get_event_loop()
+                ama_signal = None
+                qwen_signal = None
+
+                # Run AMA Pro scanner
+                if run_ama and len(df) >= 200:
                     signal, angle, tema_gap = await loop.run_in_executor(
                         executor,
-                        lambda: apply_ama_pro_tema(
-                            df,
+                        lambda tf=tf: apply_ama_pro_tema(
+                            df.copy(),
                             tf_input=tf,
                             adaptation_speed=adaptation_speed,
                             min_bars_between=min_bars_between
                         )
                     )
-
                     if signal:
+                        ama_signal = (signal, angle, tema_gap)
+
+                # Run Qwen scanner
+                if run_qwen and len(df) >= 100:
+                    signal_q, _, _ = await loop.run_in_executor(
+                        executor,
+                        lambda tf=tf: apply_qwen_scanner(
+                            df.copy(),
+                            tf_input=tf
+                        )
+                    )
+                    if signal_q:
+                        qwen_signal = signal_q
+
+                # Build results based on scanner type
+                if scanner_type == 'both':
+                    # If both scanners found a signal on same symbol/tf
+                    if ama_signal and qwen_signal:
+                        if ama_signal[0] == qwen_signal:
+                            # Same signal from both — mark as "Both"
+                            results_list.append({
+                                'Crypto Name': symbol,
+                                'Timeperiod': tf,
+                                'Signal': ama_signal[0],
+                                'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
+                                'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
+                                'Daily Change': daily_change,
+                                'Scanner': 'Both',
+                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            })
+                        else:
+                            # Different signals — add separate rows
+                            results_list.append({
+                                'Crypto Name': symbol,
+                                'Timeperiod': tf,
+                                'Signal': ama_signal[0],
+                                'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
+                                'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
+                                'Daily Change': daily_change,
+                                'Scanner': 'AMA Pro',
+                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            })
+                            results_list.append({
+                                'Crypto Name': symbol,
+                                'Timeperiod': tf,
+                                'Signal': qwen_signal,
+                                'Angle': 'N/A',
+                                'TEMA Gap': 'N/A',
+                                'Daily Change': daily_change,
+                                'Scanner': 'Qwen',
+                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            })
+                    elif ama_signal:
                         results_list.append({
                             'Crypto Name': symbol,
                             'Timeperiod': tf,
-                            'Signal': signal,
-                            'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
-                            'TEMA Gap': f"{tema_gap:+.3f}%" if tema_gap is not None else "N/A",
+                            'Signal': ama_signal[0],
+                            'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
+                            'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
                             'Daily Change': daily_change,
+                            'Scanner': 'AMA Pro',
                             'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         })
+                    elif qwen_signal:
+                        results_list.append({
+                            'Crypto Name': symbol,
+                            'Timeperiod': tf,
+                            'Signal': qwen_signal,
+                            'Angle': 'N/A',
+                            'TEMA Gap': 'N/A',
+                            'Daily Change': daily_change,
+                            'Scanner': 'Qwen',
+                            'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        })
+                elif scanner_type == 'ama_pro' and ama_signal:
+                    results_list.append({
+                        'Crypto Name': symbol,
+                        'Timeperiod': tf,
+                        'Signal': ama_signal[0],
+                        'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
+                        'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
+                        'Daily Change': daily_change,
+                        'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
+                elif scanner_type == 'qwen' and qwen_signal:
+                    results_list.append({
+                        'Crypto Name': symbol,
+                        'Timeperiod': tf,
+                        'Signal': qwen_signal,
+                        'Angle': 'N/A',
+                        'TEMA Gap': 'N/A',
+                        'Daily Change': daily_change,
+                        'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
 
