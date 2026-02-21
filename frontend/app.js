@@ -149,11 +149,22 @@ async function fetchResults() {
         if (data.scan_time) {
             updateLastScanTime(data.scan_time);
         }
+        populateTfFilter();
         renderResults();
         updateStats();
     } catch (e) {
         // API may not have /api/results yet
     }
+}
+
+function populateTfFilter() {
+    const select = $('#tfFilter');
+    const currentVal = select.value;
+    const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '1 day': '1D', '1 week': '1W' };
+    const tfs = [...new Set(allResults.map(r => r.Timeperiod))];
+    select.innerHTML = '<option value="all">All Timeframes</option>' +
+        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
+    select.value = tfs.includes(currentVal) ? currentVal : 'all';
 }
 
 function renderResults() {
@@ -382,6 +393,7 @@ async function runScan() {
         updateProgress(100, 'Scan complete!');
         addLogLine('success', `✅ SCAN COMPLETED — ${allResults.length} signal(s) found`);
 
+        populateTfFilter();
         renderResults();
         updateStats();
         updateLastScanTime(new Date().toISOString());

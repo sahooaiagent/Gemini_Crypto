@@ -1007,6 +1007,8 @@ body {
    ══════════════════════════════════════════════════════════════ */
 .table-wrap {
     overflow-x: auto;
+    overflow-y: auto;
+    max-height: 60vh;
 }
 
 table {
@@ -1024,6 +1026,10 @@ th {
     text-transform: uppercase;
     border-bottom: 1px solid var(--glass-border);
     white-space: nowrap;
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    z-index: 2;
 }
 
 th.sortable {
