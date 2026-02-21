@@ -173,11 +173,18 @@ function renderResults() {
 
     // Sort
     if (currentSort.col) {
+        const numericCols = ['Angle', 'TEMA Gap', 'Daily Change'];
+        const isNumeric = numericCols.includes(currentSort.col);
         filtered.sort((a, b) => {
             let va = a[currentSort.col] || '';
             let vb = b[currentSort.col] || '';
-            if (typeof va === 'string') va = va.toLowerCase();
-            if (typeof vb === 'string') vb = vb.toLowerCase();
+            if (isNumeric) {
+                va = parseFloat(String(va).replace(/[°%,]/g, '')) || 0;
+                vb = parseFloat(String(vb).replace(/[°%,]/g, '')) || 0;
+            } else {
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+            }
             if (va < vb) return currentSort.asc ? -1 : 1;
             if (va > vb) return currentSort.asc ? 1 : -1;
             return 0;
@@ -494,6 +501,7 @@ function initFilterControls() {
                 timeframe: 'Timeperiod',
                 signal: 'Signal',
                 angle: 'Angle',
+                temagap: 'TEMA Gap',
                 change: 'Daily Change'
             };
             const col = colMap[th.dataset.col];
