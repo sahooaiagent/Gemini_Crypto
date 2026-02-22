@@ -191,6 +191,11 @@
                     <select class="filter-dropdown" id="tfFilter">
                         <option value="all">All Timeframes</option>
                     </select>
+                    <div class="filter-chips" id="scannerFilterChips">
+                        <button class="chip active" data-filter="all">Both</button>
+                        <button class="chip" data-filter="Qwen">Qwen</button>
+                        <button class="chip" data-filter="AMA Pro">AMA Pro</button>
+                    </div>
                 </div>
 
                 <!-- Table -->
@@ -285,9 +290,9 @@
                         <div class="config-section">
                             <label class="config-label">Scanner Type</label>
                             <div class="scanner-type-chips" id="scannerTypeChips">
-                                <button class="scanner-chip active" data-scanner="ama_pro">AMA Pro</button>
+                                <button class="scanner-chip" data-scanner="ama_pro">AMA Pro</button>
                                 <button class="scanner-chip" data-scanner="qwen">Qwen</button>
-                                <button class="scanner-chip" data-scanner="both">Both</button>
+                                <button class="scanner-chip active" data-scanner="both">Both</button>
                             </div>
                             <p class="config-hint">Select which scanner strategy to use for signal detection</p>
                         </div>
@@ -405,7 +410,7 @@
      ════════════════════════════════════════════════════════════════════ -->
     <div id="toastContainer"></div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 
 </html>

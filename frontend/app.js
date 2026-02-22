@@ -7,7 +7,7 @@ let allResults = [];
 let scanRunning = false;
 let logPollInterval = null;
 let currentSort = { col: null, asc: true };
-let currentScannerType = 'ama_pro';
+let currentScannerType = 'both';
 
 // ── DOM REFS ──
 const $ = (sel) => document.querySelector(sel);
@@ -173,13 +173,15 @@ function renderResults() {
     const empty = $('#emptyState');
     const countEl = $('#resultCount');
     const searchVal = ($('#searchInput').value || '').toLowerCase();
-    const signalFilter = $('.chip.active')?.dataset?.filter || 'all';
+    const signalFilter = $('#signalFilterChips .chip.active')?.dataset?.filter || 'all';
     const tfFilter = $('#tfFilter').value;
+    const scannerFilter = $('#scannerFilterChips .chip.active')?.dataset?.filter || 'all';
 
     let filtered = allResults.filter(r => {
         if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
         if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
         if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
+        if (scannerFilter !== 'all' && (r.Scanner || '') !== scannerFilter) return false;
         return true;
     });
 
@@ -531,6 +533,15 @@ function initFilterControls() {
 
     // Timeframe filter
     $('#tfFilter').addEventListener('change', renderResults);
+
+    // Scanner filter chips
+    $$('#scannerFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#scannerFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            renderResults();
+        });
+    });
 
     // Column sorting
     $$('th.sortable').forEach(th => {

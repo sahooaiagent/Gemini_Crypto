@@ -867,6 +867,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
                         'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
                         'Daily Change': daily_change,
+                        'Scanner': 'AMA Pro',
                         'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     })
                 elif scanner_type == 'qwen' and qwen_signal:
@@ -877,6 +878,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         'Angle': 'N/A',
                         'TEMA Gap': 'N/A',
                         'Daily Change': daily_change,
+                        'Scanner': 'Qwen',
                         'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     })
             except Exception as e:
