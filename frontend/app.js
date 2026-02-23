@@ -161,7 +161,7 @@ async function fetchResults() {
 function populateTfFilter() {
     const select = $('#tfFilter');
     const currentVal = select.value;
-    const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '1 day': '1D', '1 week': '1W' };
+    const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
     const tfs = [...new Set(allResults.map(r => r.Timeperiod))];
     select.innerHTML = '<option value="all">All Timeframes</option>' +
         tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
@@ -225,7 +225,7 @@ function renderResults() {
         const changeVal = parseFloat(changeStr);
         const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
         const name = r['Crypto Name'] || '—';
-        const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '1 day': '1D', '1 week': '1W' };
+        const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
         const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
         const scannerVal = r.Scanner || '';
         const scannerBadgeCls = scannerVal === 'Both' ? 'scanner-both' : scannerVal === 'Qwen' ? 'scanner-qwen' : 'scanner-ama';
@@ -335,13 +335,14 @@ function initScannerControls() {
     $('#exportCsvBtn').addEventListener('click', exportCSV);
 
     // Clear logs
-    $('#clearLogsBtn').addEventListener('click', () => {
-        $('#logOutput').innerHTML = `
+    const clearLogHTML = `
             <div class="log-line system">
                 <span class="log-ts">system</span>
                 <span class="log-msg">Logs cleared</span>
             </div>
         `;
+    $('#scannerClearLogsBtn').addEventListener('click', () => {
+        $('#scannerLogOutput').innerHTML = clearLogHTML;
     });
 }
 
@@ -479,7 +480,7 @@ async function fetchLogs() {
         const res = await fetch(`${API_URL}/api/logs`);
         if (!res.ok) return;
         const data = await res.json();
-        const logEl = $('#logOutput');
+        const logEl = $('#scannerLogOutput');
 
         if (data.logs && data.logs.length > 0) {
             logEl.innerHTML = data.logs.map(line => {
@@ -504,9 +505,9 @@ async function fetchLogs() {
 }
 
 function addLogLine(cls, msg) {
-    const logEl = $('#logOutput');
     const now = new Date();
     const ts = now.toTimeString().slice(0, 8);
+    const logEl = $('#scannerLogOutput');
     logEl.innerHTML += `<div class="log-line ${cls}"><span class="log-ts">${ts}</span><span class="log-msg">${msg}</span></div>`;
     logEl.scrollTop = logEl.scrollHeight;
 }

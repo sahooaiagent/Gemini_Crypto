@@ -1179,6 +1179,40 @@ tbody tr:hover {
     max-width: 800px;
 }
 
+.scanner-layout.scanner-two-col {
+    max-width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+.scanner-diag-card {
+    position: sticky;
+    top: 24px;
+}
+
+.scanner-diag-card .terminal-body {
+    height: 520px;
+}
+
+.scanner-diag-card .terminal-header {
+    display: flex;
+    align-items: center;
+}
+
+.scanner-diag-card .scanner-clear-logs {
+    margin-left: auto;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    .scanner-layout.scanner-two-col {
+        grid-template-columns: 1fr;
+    }
+}
+
 .scanner-config-card h2 {
     font-size: 1.05rem;
     font-weight: 700;

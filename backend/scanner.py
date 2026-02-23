@@ -115,8 +115,12 @@ async def fetch_binance_data(symbol, timeframe, limit=500):
         '1hr': '1h',
         '2hr': '2h',
         '4hr': '4h',
+        '6hr': '6h',
+        '8hr': '8h',
+        '12hr': '12h',
         '1 day': '1d',
-        '1 week': '1w'
+        '1 week': '1w',
+        '1 month': '1M'
     }
     
     binance_tf = tf_map.get(timeframe, '15m')

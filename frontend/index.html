@@ -61,11 +61,6 @@
                 <span>Scanner</span>
                 <div class="nav-indicator"></div>
             </a>
-            <a class="nav-link" data-tab="diagnostics" id="nav-diagnostics">
-                <div class="nav-icon"><i class="fas fa-terminal"></i></div>
-                <span>Diagnostics</span>
-                <div class="nav-indicator"></div>
-            </a>
         </nav>
 
         <div class="sidebar-footer">
@@ -260,7 +255,7 @@
                 </div>
             </header>
 
-            <div class="scanner-layout">
+            <div class="scanner-layout scanner-two-col">
                 <div class="card scanner-config-card">
                     <h2><i class="fas fa-sliders-h"></i> Scan Configuration</h2>
 
@@ -306,8 +301,12 @@
                                 <button class="tf-chip active" data-tf="1hr">1h</button>
                                 <button class="tf-chip" data-tf="2hr">2h</button>
                                 <button class="tf-chip active" data-tf="4hr">4h</button>
+                                <button class="tf-chip" data-tf="6hr">6h</button>
+                                <button class="tf-chip" data-tf="8hr">8h</button>
+                                <button class="tf-chip" data-tf="12hr">12h</button>
                                 <button class="tf-chip" data-tf="1 day">1D</button>
                                 <button class="tf-chip" data-tf="1 week">1W</button>
+                                <button class="tf-chip" data-tf="1 month">1M</button>
                             </div>
                         </div>
 
@@ -351,40 +350,30 @@
                         <p class="progress-detail" id="scanProgressDetail">Initializing scanner...</p>
                     </div>
                 </div>
-            </div>
-        </section>
 
-        <!-- ──── DIAGNOSTICS TAB ──── -->
-        <section class="tab-content" id="tab-diagnostics">
-            <header class="page-header">
-                <div>
-                    <h1 class="page-title">Live Diagnostics</h1>
-                    <p class="page-subtitle">Real-time scanner logs and system status</p>
-                </div>
-                <div class="header-actions">
-                    <button class="btn btn-sm btn-ghost" id="clearLogsBtn">
-                        <i class="fas fa-trash-alt"></i> Clear
-                    </button>
-                </div>
-            </header>
-
-            <div class="card terminal-card">
-                <div class="terminal-header">
-                    <div class="terminal-dots">
-                        <span class="dot red"></span>
-                        <span class="dot yellow"></span>
-                        <span class="dot green"></span>
+                <!-- Live Diagnostics Panel (right side) -->
+                <div class="card terminal-card scanner-diag-card">
+                    <div class="terminal-header">
+                        <div class="terminal-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <span class="terminal-title">Live Diagnostics</span>
+                        <button class="btn btn-sm btn-ghost scanner-clear-logs" id="scannerClearLogsBtn">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
                     </div>
-                    <span class="terminal-title">gemini-scanner — logs</span>
-                </div>
-                <div class="terminal-body" id="logOutput">
-                    <div class="log-line system">
-                        <span class="log-ts">system</span>
-                        <span class="log-msg">Waiting for scanner output...</span>
+                    <div class="terminal-body" id="scannerLogOutput">
+                        <div class="log-line system">
+                            <span class="log-ts">system</span>
+                            <span class="log-msg">Waiting for scanner output...</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>
+
 
     </main>
 
