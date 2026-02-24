@@ -215,8 +215,6 @@ function renderResults() {
     empty.style.display = 'none';
     countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
 
-    const showScannerCol = currentScannerType === 'both';
-    toggleScannerColumn(showScannerCol);
 
     body.innerHTML = filtered.map((r, i) => {
         const sigCls = r.Signal === 'LONG' ? 'long' : 'short';
@@ -227,8 +225,9 @@ function renderResults() {
         const name = r['Crypto Name'] || '—';
         const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
         const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
-        const scannerVal = r.Scanner || '';
-        const scannerBadgeCls = scannerVal === 'Both' ? 'scanner-both' : scannerVal === 'Qwen' ? 'scanner-qwen' : 'scanner-ama';
+        const scannerVal = r.Scanner || '—';
+        const badgeMap = { 'Both': 'scanner-both', 'Qwen': 'scanner-qwen', 'AMA Pro': 'scanner-ama', 'AMA Pro Now': 'scanner-ama-now', 'Qwen Now': 'scanner-qwen-now', 'Both Now': 'scanner-both-now' };
+        const scannerBadgeCls = badgeMap[r.Scanner] || '';
 
         return `
             <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
@@ -243,7 +242,7 @@ function renderResults() {
                 <td class="mono">${r.Angle || '—'}</td>
                 <td class="mono">${r['TEMA Gap'] || '—'}</td>
                 <td class="${changeCls}">${changeStr}</td>
-                ${showScannerCol ? `<td><span class="scanner-badge ${scannerBadgeCls}">${scannerVal}</span></td>` : ''}
+                <td>${scannerBadgeCls ? `<span class="scanner-badge ${scannerBadgeCls}">${scannerVal}</span>` : scannerVal}</td>
                 <td class="mono">${r.Timestamp || '—'}</td>
                 <td>
                     <button class="chart-btn" onclick="openChart('${name}', '${r.Timeperiod}')">
@@ -312,7 +311,6 @@ function initScannerControls() {
             $$('.scanner-chip').forEach(c => c.classList.remove('active'));
             chip.classList.add('active');
             currentScannerType = chip.dataset.scanner;
-            toggleScannerColumn(currentScannerType === 'both');
         });
     });
 
@@ -343,13 +341,6 @@ function initScannerControls() {
         `;
     $('#scannerClearLogsBtn').addEventListener('click', () => {
         $('#scannerLogOutput').innerHTML = clearLogHTML;
-    });
-}
-
-function toggleScannerColumn(show) {
-    $$('.scanner-col').forEach(el => {
-        if (show) el.classList.remove('hidden');
-        else el.classList.add('hidden');
     });
 }
 
@@ -384,7 +375,8 @@ async function runScan() {
     updateStats();
 
     // Add scan start log
-    const scannerLabel = scanner_type === 'both' ? 'AMA Pro + Qwen' : scanner_type === 'qwen' ? 'Qwen' : 'AMA Pro';
+    const scannerLabels = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners' };
+    const scannerLabel = scannerLabels[scanner_type] || scanner_type;
     addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Scanner: ${scannerLabel} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
 
     // Start log polling

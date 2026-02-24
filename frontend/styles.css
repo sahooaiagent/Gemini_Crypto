@@ -1376,6 +1376,24 @@ tbody tr:hover {
     color: var(--green);
 }
 
+.scanner-badge.scanner-ama-now {
+    background: var(--purple-dim);
+    color: var(--purple);
+    border: 1px dashed var(--purple);
+}
+
+.scanner-badge.scanner-qwen-now {
+    background: var(--cyan-dim);
+    color: var(--cyan);
+    border: 1px dashed var(--cyan);
+}
+
+.scanner-badge.scanner-both-now {
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px dashed var(--green);
+}
+
 .scan-actions {
     margin-top: 32px;
     display: flex;

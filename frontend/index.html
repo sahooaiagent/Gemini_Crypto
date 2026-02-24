@@ -187,9 +187,13 @@
                         <option value="all">All Timeframes</option>
                     </select>
                     <div class="filter-chips" id="scannerFilterChips">
-                        <button class="chip active" data-filter="all">Both</button>
-                        <button class="chip" data-filter="Qwen">Qwen</button>
+                        <button class="chip active" data-filter="all">All</button>
                         <button class="chip" data-filter="AMA Pro">AMA Pro</button>
+                        <button class="chip" data-filter="Qwen">Qwen</button>
+                        <button class="chip" data-filter="Both">Both</button>
+                        <button class="chip" data-filter="AMA Pro Now">AMA Pro Now</button>
+                        <button class="chip" data-filter="Qwen Now">Qwen Now</button>
+                        <button class="chip" data-filter="Both Now">Both Now</button>
                     </div>
                 </div>
 
@@ -222,7 +226,7 @@
                                     <span>Daily Chg</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
-                                <th class="sortable scanner-col hidden" data-col="scanner">
+                                <th class="sortable" data-col="scanner">
                                     <span>Scanner</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
@@ -288,6 +292,10 @@
                                 <button class="scanner-chip" data-scanner="ama_pro">AMA Pro</button>
                                 <button class="scanner-chip" data-scanner="qwen">Qwen</button>
                                 <button class="scanner-chip active" data-scanner="both">Both</button>
+                                <button class="scanner-chip" data-scanner="ama_pro_now">AMA Pro Now</button>
+                                <button class="scanner-chip" data-scanner="qwen_now">Qwen Now</button>
+                                <button class="scanner-chip" data-scanner="both_now">Both Now</button>
+                                <button class="scanner-chip" data-scanner="all">All</button>
                             </div>
                             <p class="config-hint">Select which scanner strategy to use for signal detection</p>
                         </div>

@@ -52,7 +52,7 @@ class ScanRequest(BaseModel):
     adaptation_speed: Optional[str] = "Medium"
     min_bars_between: Optional[int] = 3
     crypto_count: Optional[int] = 20
-    scanner_type: Optional[str] = "ama_pro"  # 'ama_pro', 'qwen', or 'both'
+    scanner_type: Optional[str] = "ama_pro"  # 'ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now', 'both_now', 'all'
 
 # ── API ROUTES ──
 

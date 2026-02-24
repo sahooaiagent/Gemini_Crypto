@@ -205,7 +205,7 @@ async def close_exchange():
 # AMA PRO TEMA LOGIC — Faithful Port of Pine Script
 # =============================================================================
 
-def apply_ama_pro_tema(df, tf_input="1 day", **kwargs):
+def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs):
     """
     Applies the full AMA PRO TEMA logic:
     1. Market regime detection (ADX, volatility ratio, EMA alignment)
@@ -213,16 +213,19 @@ def apply_ama_pro_tema(df, tf_input="1 day", **kwargs):
     3. TEMA crossover signals
     4. Signal filtering: longValid / shortValid (min bars between + regime conflict)
     5. Check the PREVIOUS closed candle (index -2) for a valid signal
-    
-    Returns: (signal, crossover_angle) or (None, None)
+
+    If use_current_candle=True, the forming candle is kept (for "Now" mode).
+
+    Returns: (signal, crossover_angle, tema_gap_pct) or (None, None, None)
     """
     if df is None or len(df) < 200:
         return None, None, None
 
-    # Drop the last row (current forming/incomplete candle) so all logic
-    # runs exclusively on closed candles. After this, df.iloc[-1] is the
-    # latest CLOSED candle.
-    df = df.iloc[:-1].copy()
+    if not use_current_candle:
+        # Drop the last row (current forming/incomplete candle) so all logic
+        # runs exclusively on closed candles. After this, df.iloc[-1] is the
+        # latest CLOSED candle.
+        df = df.iloc[:-1].copy()
 
     if len(df) < 200:
         return None, None, None
@@ -553,7 +556,7 @@ def calculate_vwap(df):
 
     return vwap
 
-def apply_qwen_scanner(df, tf_input="1 day", **kwargs):
+def apply_qwen_scanner(df, tf_input="1 day", use_current_candle=False, **kwargs):
     """
     Applies the MA Qwen indicator logic (matching QwenPre alert):
     1. Volatility & Regime detection (lowVol, highVolMomentum, panicSelling)
@@ -563,13 +566,16 @@ def apply_qwen_scanner(df, tf_input="1 day", **kwargs):
     5. buyToPlot / sellToPlot with 5-bar dedup (no repeated QL/QS within 5 bars)
     6. Signal = buyToPlot or sellToPlot on the latest CLOSED candle (= QwenPre)
 
+    If use_current_candle=True, the forming candle is kept (for "Now" mode).
+
     Returns: (signal, None, None) — angle/tema_gap not applicable for Qwen
     """
     if df is None or len(df) < 100:
         return None, None, None
 
-    # Drop the last row (current forming/incomplete candle)
-    df = df.iloc[:-1].copy()
+    if not use_current_candle:
+        # Drop the last row (current forming/incomplete candle)
+        df = df.iloc[:-1].copy()
 
     if len(df) < 100:
         return None, None, None
@@ -757,14 +763,16 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     """
     Scans a single symbol across all requested timeframes.
     Uses a semaphore to limit concurrent requests.
-    Supports scanner_type: 'ama_pro', 'qwen', or 'both'.
+    Supports scanner_type: 'ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now'.
     """
     adaptation_speed = kwargs.get('adaptation_speed', 'Medium')
     min_bars_between = kwargs.get('min_bars_between', 3)
     scanner_type = kwargs.get('scanner_type', 'ama_pro')
 
-    run_ama = scanner_type in ('ama_pro', 'both')
-    run_qwen = scanner_type in ('qwen', 'both')
+    run_ama = scanner_type in ('ama_pro', 'both', 'all')
+    run_qwen = scanner_type in ('qwen', 'both', 'all')
+    run_ama_now = scanner_type in ('ama_pro_now', 'both_now', 'all')
+    run_qwen_now = scanner_type in ('qwen_now', 'both_now', 'all')
 
     async with semaphore:
         for tf in timeframes:
@@ -803,88 +811,84 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     if signal_q:
                         qwen_signal = signal_q
 
-                # Build results based on scanner type
-                if scanner_type == 'both':
-                    # If both scanners found a signal on same symbol/tf
+                # Run AMA Pro Now scanner (current/forming candle)
+                ama_now_signal = None
+                if run_ama_now and len(df) >= 200:
+                    signal, angle, tema_gap = await loop.run_in_executor(
+                        executor,
+                        lambda tf=tf: apply_ama_pro_tema(
+                            df.copy(),
+                            tf_input=tf,
+                            use_current_candle=True,
+                            adaptation_speed=adaptation_speed,
+                            min_bars_between=min_bars_between
+                        )
+                    )
+                    if signal:
+                        ama_now_signal = (signal, angle, tema_gap)
+
+                # Run Qwen Now scanner (current/forming candle)
+                qwen_now_signal = None
+                if run_qwen_now and len(df) >= 100:
+                    signal_q, _, _ = await loop.run_in_executor(
+                        executor,
+                        lambda tf=tf: apply_qwen_scanner(
+                            df.copy(),
+                            tf_input=tf,
+                            use_current_candle=True
+                        )
+                    )
+                    if signal_q:
+                        qwen_now_signal = signal_q
+
+                # ── Helper to append a result row ──
+                def add_result(sig, angle_val, tg_val, scanner_label):
+                    results_list.append({
+                        'Crypto Name': symbol,
+                        'Timeperiod': tf,
+                        'Signal': sig,
+                        'Angle': f"{angle_val:.2f}°" if angle_val is not None else "N/A",
+                        'TEMA Gap': f"{tg_val:+.3f}%" if tg_val is not None else "N/A",
+                        'Daily Change': daily_change,
+                        'Scanner': scanner_label,
+                        'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
+
+                # ── Build results for closed-candle scanners (AMA Pro / Qwen) ──
+                if run_ama and run_qwen:
+                    # "Both" or "All" mode for closed-candle pair
                     if ama_signal and qwen_signal:
                         if ama_signal[0] == qwen_signal:
-                            # Same signal from both — mark as "Both"
-                            results_list.append({
-                                'Crypto Name': symbol,
-                                'Timeperiod': tf,
-                                'Signal': ama_signal[0],
-                                'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
-                                'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
-                                'Daily Change': daily_change,
-                                'Scanner': 'Both',
-                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            })
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Both')
                         else:
-                            # Different signals — add separate rows
-                            results_list.append({
-                                'Crypto Name': symbol,
-                                'Timeperiod': tf,
-                                'Signal': ama_signal[0],
-                                'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
-                                'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
-                                'Daily Change': daily_change,
-                                'Scanner': 'AMA Pro',
-                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            })
-                            results_list.append({
-                                'Crypto Name': symbol,
-                                'Timeperiod': tf,
-                                'Signal': qwen_signal,
-                                'Angle': 'N/A',
-                                'TEMA Gap': 'N/A',
-                                'Daily Change': daily_change,
-                                'Scanner': 'Qwen',
-                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            })
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro')
+                            add_result(qwen_signal, None, None, 'Qwen')
                     elif ama_signal:
-                        results_list.append({
-                            'Crypto Name': symbol,
-                            'Timeperiod': tf,
-                            'Signal': ama_signal[0],
-                            'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
-                            'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
-                            'Daily Change': daily_change,
-                            'Scanner': 'AMA Pro',
-                            'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        })
+                        add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro')
                     elif qwen_signal:
-                        results_list.append({
-                            'Crypto Name': symbol,
-                            'Timeperiod': tf,
-                            'Signal': qwen_signal,
-                            'Angle': 'N/A',
-                            'TEMA Gap': 'N/A',
-                            'Daily Change': daily_change,
-                            'Scanner': 'Qwen',
-                            'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        })
-                elif scanner_type == 'ama_pro' and ama_signal:
-                    results_list.append({
-                        'Crypto Name': symbol,
-                        'Timeperiod': tf,
-                        'Signal': ama_signal[0],
-                        'Angle': f"{ama_signal[1]:.2f}°" if ama_signal[1] is not None else "N/A",
-                        'TEMA Gap': f"{ama_signal[2]:+.3f}%" if ama_signal[2] is not None else "N/A",
-                        'Daily Change': daily_change,
-                        'Scanner': 'AMA Pro',
-                        'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    })
-                elif scanner_type == 'qwen' and qwen_signal:
-                    results_list.append({
-                        'Crypto Name': symbol,
-                        'Timeperiod': tf,
-                        'Signal': qwen_signal,
-                        'Angle': 'N/A',
-                        'TEMA Gap': 'N/A',
-                        'Daily Change': daily_change,
-                        'Scanner': 'Qwen',
-                        'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    })
+                        add_result(qwen_signal, None, None, 'Qwen')
+                elif run_ama and ama_signal:
+                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro')
+                elif run_qwen and qwen_signal:
+                    add_result(qwen_signal, None, None, 'Qwen')
+
+                # ── Build results for current-candle scanners (AMA Pro Now / Qwen Now) ──
+                if run_ama_now and run_qwen_now:
+                    # "Both Now" or "All" mode for current-candle pair
+                    if ama_now_signal and qwen_now_signal:
+                        if ama_now_signal[0] == qwen_now_signal:
+                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'Both Now')
+                        else:
+                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now')
+                            add_result(qwen_now_signal, None, None, 'Qwen Now')
+                    elif ama_now_signal:
+                        add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now')
+                    elif qwen_now_signal:
+                        add_result(qwen_now_signal, None, None, 'Qwen Now')
+                elif run_ama_now and ama_now_signal:
+                    add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now')
+                elif run_qwen_now and qwen_now_signal:
+                    add_result(qwen_now_signal, None, None, 'Qwen Now')
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
 
