@@ -181,7 +181,14 @@ function renderResults() {
         if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
         if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
         if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
-        if (scannerFilter !== 'all' && (r.Scanner || '') !== scannerFilter) return false;
+        if (scannerFilter !== 'all') {
+            const s = r.Scanner || '';
+            if (scannerFilter === 'Both') {
+                if (s !== 'AMA Pro' && s !== 'Qwen' && s !== 'Both') return false;
+            } else if (scannerFilter === 'Both Now') {
+                if (s !== 'AMA Pro Now' && s !== 'Qwen Now' && s !== 'Both Now') return false;
+            } else if (s !== scannerFilter) return false;
+        }
         return true;
     });
 
