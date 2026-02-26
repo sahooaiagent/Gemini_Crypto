@@ -232,8 +232,9 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
 
     try:
         # === PINE SCRIPT PARAMETERS ===
-        i_emaFastMin, i_emaFastMax = 8, 21
-        i_emaSlowMin, i_emaSlowMax = 21, 55
+        i_emaFastMin, i_emaFastMax = 3, 27
+        i_emaSlowMin, i_emaSlowMax = 21, 100
+        i_rsiMin, i_rsiMax = 7, 21
         i_adxLength = 14
         i_adxThreshold = 25
         i_volLookback = 50
@@ -360,31 +361,47 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
         
         fast_range = i_emaFastMax - i_emaFastMin
         slow_range = i_emaSlowMax - i_emaSlowMin
-        
+        rsi_range = i_rsiMax - i_rsiMin
+
         adaptive_fast = i_emaFastMin + fast_range * (1 - adjust_factor)
         adaptive_slow = i_emaSlowMin + slow_range * (1 - adjust_factor)
-        
+
         # Ensure minimum separation of 6 (TEMA needs slightly larger)
         adaptive_slow = np.maximum(adaptive_slow, adaptive_fast + 6)
-        
+
+        # Adaptive RSI period (matching Pine Script logic)
+        rsi_trend_factor = np.where(df['regimeIsTrending'], 0.7, 1.3)
+        rsi_vol_factor = np.where(df['regimeIsHighVol'], 0.8, 1.2)
+        adaptive_rsi = i_rsiMin + rsi_range * rsi_trend_factor * rsi_vol_factor * sensitivity_mult
+        adaptive_rsi = np.clip(adaptive_rsi, i_rsiMin, i_rsiMax)
+
         # =================================================================
-        # PRE-CALCULATE TEMA VALUES (matching Pine Script periods)
+        # PRE-CALCULATE TEMA VALUES (expanded: 35 lengths)
         # =================================================================
-        temas = {p: calculate_tema(df['close'], p) for p in [8, 10, 12, 14, 16, 18, 21, 26, 30, 34, 38, 42, 47, 55]}
-        
-        df['temaFast'] = np.select(
-            [adaptive_fast <= 9, adaptive_fast <= 11, adaptive_fast <= 13,
-             adaptive_fast <= 15, adaptive_fast <= 17, adaptive_fast <= 19],
-            [temas[8], temas[10], temas[12], temas[14], temas[16], temas[18]],
-            default=temas[21]
-        )
-        
-        df['temaSlow'] = np.select(
-            [adaptive_slow <= 28, adaptive_slow <= 32, adaptive_slow <= 36,
-             adaptive_slow <= 40, adaptive_slow <= 44, adaptive_slow <= 51],
-            [temas[26], temas[30], temas[34], temas[38], temas[42], temas[47]],
-            default=temas[55]
-        )
+        tema_periods = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+                        21, 22, 23, 24, 25, 26, 27, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100]
+        temas = {p: calculate_tema(df['close'], p) for p in tema_periods}
+
+        # PRE-CALCULATE RSI VALUES (expanded: 15 lengths)
+        rsi_periods = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+        rsis = {p: calculate_rsi(df['close'], p) for p in rsi_periods}
+
+        # SELECT TEMA Fast (periods 3–27, 1-unit granularity)
+        fast_conds = [adaptive_fast <= p + 0.5 for p in range(3, 27)]
+        fast_vals = [temas[p] for p in range(3, 27)]
+        df['temaFast'] = np.select(fast_conds, fast_vals, default=temas[27])
+
+        # SELECT TEMA Slow (periods 21–100)
+        slow_steps = [21, 22, 23, 24, 25, 26, 27, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90]
+        slow_thresholds = [21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 28.5, 32.5, 37.5, 42.5, 47.5, 52.5, 57.5, 65, 75, 85, 95]
+        slow_conds = [adaptive_slow <= t for t in slow_thresholds]
+        slow_vals = [temas[p] for p in slow_steps]
+        df['temaSlow'] = np.select(slow_conds, slow_vals, default=temas[100])
+
+        # SELECT RSI (periods 7–21, 1-unit granularity)
+        rsi_conds = [adaptive_rsi <= p + 0.5 for p in range(7, 21)]
+        rsi_vals_sel = [rsis[p] for p in range(7, 21)]
+        df['rsi'] = np.select(rsi_conds, rsi_vals_sel, default=rsis[21])
         
         # =================================================================
         # SECTION 5: STRATEGY LOGIC — TEMA crossovers
