@@ -376,32 +376,34 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
         adaptive_rsi = np.clip(adaptive_rsi, i_rsiMin, i_rsiMax)
 
         # =================================================================
-        # PRE-CALCULATE TEMA VALUES (expanded: 35 lengths)
+        # PRE-CALCULATE TEMA VALUES (expanded: 50+ lengths)
         # =================================================================
         tema_periods = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-                        21, 22, 23, 24, 25, 26, 27, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100]
+                        21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 34, 36, 38, 40, 42, 44,
+                        46, 48, 50, 52, 54, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
         temas = {p: calculate_tema(df['close'], p) for p in tema_periods}
 
-        # PRE-CALCULATE RSI VALUES (expanded: 15 lengths)
-        rsi_periods = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+        # PRE-CALCULATE RSI VALUES (expanded: 25+ lengths)
+        rsi_periods = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+                       22, 23, 24, 25, 26, 27, 28, 29, 30, 35]
         rsis = {p: calculate_rsi(df['close'], p) for p in rsi_periods}
 
-        # SELECT TEMA Fast (periods 3–27, 1-unit granularity)
-        fast_conds = [adaptive_fast <= p + 0.5 for p in range(3, 27)]
-        fast_vals = [temas[p] for p in range(3, 27)]
-        df['temaFast'] = np.select(fast_conds, fast_vals, default=temas[27])
+        # SELECT TEMA Fast (periods 3–30, 1-unit granularity)
+        fast_conds = [adaptive_fast <= p + 0.5 for p in range(3, 30)]
+        fast_vals = [temas[p] for p in range(3, 30)]
+        df['temaFast'] = np.select(fast_conds, fast_vals, default=temas[30])
 
         # SELECT TEMA Slow (periods 21–100)
-        slow_steps = [21, 22, 23, 24, 25, 26, 27, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90]
-        slow_thresholds = [21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 28.5, 32.5, 37.5, 42.5, 47.5, 52.5, 57.5, 65, 75, 85, 95]
+        slow_steps = [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 55, 60, 65, 70, 75, 80, 85, 90, 95]
+        slow_thresholds = [21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.5, 29.5, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 54.5, 57.5, 62.5, 67.5, 72.5, 77.5, 82.5, 87.5, 92.5, 97.5]
         slow_conds = [adaptive_slow <= t for t in slow_thresholds]
         slow_vals = [temas[p] for p in slow_steps]
         df['temaSlow'] = np.select(slow_conds, slow_vals, default=temas[100])
 
-        # SELECT RSI (periods 7–21, 1-unit granularity)
-        rsi_conds = [adaptive_rsi <= p + 0.5 for p in range(7, 21)]
-        rsi_vals_sel = [rsis[p] for p in range(7, 21)]
-        df['rsi'] = np.select(rsi_conds, rsi_vals_sel, default=rsis[21])
+        # SELECT RSI (periods 7–35)
+        rsi_conds = [adaptive_rsi <= p + 0.5 for p in range(7, 30)] + [adaptive_rsi <= 32.5]
+        rsi_vals_sel = [rsis[p] for p in range(7, 30)] + [rsis[30]]
+        df['rsi'] = np.select(rsi_conds, rsi_vals_sel, default=rsis[35])
         
         # =================================================================
         # SECTION 5: STRATEGY LOGIC — TEMA crossovers
