@@ -232,9 +232,9 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
 
     try:
         # === PINE SCRIPT PARAMETERS ===
-        i_emaFastMin, i_emaFastMax = 3, 27
-        i_emaSlowMin, i_emaSlowMax = 21, 100
-        i_rsiMin, i_rsiMax = 7, 21
+        i_emaFastMin, i_emaFastMax = 8, 21
+        i_emaSlowMin, i_emaSlowMax = 21, 55
+        i_rsiMin, i_rsiMax = 10, 21
         i_adxLength = 14
         i_adxThreshold = 25
         i_volLookback = 50
@@ -306,6 +306,8 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
                 if regime_counter >= i_regimeStability:
                     stable_regime = current_regime
                     regime_counter = 0
+                else:
+                    regime_counter = 0  # Pine Script inner else: reset if not yet stable
             else:
                 regime_counter = 0
 
@@ -388,21 +390,20 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
                        22, 23, 24, 25, 26, 27, 28, 29, 30, 35]
         rsis = {p: calculate_rsi(df['close'], p) for p in rsi_periods}
 
-        # SELECT TEMA Fast (periods 3–30, 1-unit granularity)
-        fast_conds = [adaptive_fast <= p + 0.5 for p in range(3, 30)]
-        fast_vals = [temas[p] for p in range(3, 30)]
+        # SELECT TEMA Fast (periods 3–30, integer thresholds matching Pine Script)
+        fast_conds = [adaptive_fast <= p for p in range(3, 31)]
+        fast_vals = [temas[p] for p in range(3, 31)]
         df['temaFast'] = np.select(fast_conds, fast_vals, default=temas[30])
 
-        # SELECT TEMA Slow (periods 21–100)
-        slow_steps = [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 55, 60, 65, 70, 75, 80, 85, 90, 95]
-        slow_thresholds = [21.5, 22.5, 23.5, 24.5, 25.5, 26.5, 27.5, 28.5, 29.5, 31, 33, 35, 37, 39, 41, 43, 45, 47, 49, 51, 53, 54.5, 57.5, 62.5, 67.5, 72.5, 77.5, 82.5, 87.5, 92.5, 97.5]
-        slow_conds = [adaptive_slow <= t for t in slow_thresholds]
+        # SELECT TEMA Slow (periods 20–100, 2-unit steps matching Pine Script)
+        slow_steps = [20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 55, 60, 65, 70, 75, 80, 85, 90, 95]
+        slow_conds = [adaptive_slow <= p for p in slow_steps]
         slow_vals = [temas[p] for p in slow_steps]
         df['temaSlow'] = np.select(slow_conds, slow_vals, default=temas[100])
 
-        # SELECT RSI (periods 7–35)
-        rsi_conds = [adaptive_rsi <= p + 0.5 for p in range(7, 30)] + [adaptive_rsi <= 32.5]
-        rsi_vals_sel = [rsis[p] for p in range(7, 30)] + [rsis[30]]
+        # SELECT RSI (periods 7–35, integer thresholds matching Pine Script)
+        rsi_conds = [adaptive_rsi <= p for p in range(7, 31)] + [adaptive_rsi <= 35]
+        rsi_vals_sel = [rsis[p] for p in range(7, 31)] + [rsis[35]]
         df['rsi'] = np.select(rsi_conds, rsi_vals_sel, default=rsis[35])
         
         # =================================================================
