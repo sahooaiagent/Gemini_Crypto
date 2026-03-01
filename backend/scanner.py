@@ -411,7 +411,36 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
         # =================================================================
         df['longCondition'] = (df['temaFast'] > df['temaSlow']) & (df['temaFast'].shift(1) <= df['temaSlow'].shift(1))
         df['shortCondition'] = (df['temaFast'] < df['temaSlow']) & (df['temaFast'].shift(1) >= df['temaSlow'].shift(1))
-        
+
+        # Angle Threshold Filter
+        angle_lookback = 3
+        fast_slope = (df['temaFast'] - df['temaFast'].shift(angle_lookback)) / angle_lookback
+        slow_slope = (df['temaSlow'] - df['temaSlow'].shift(angle_lookback)) / angle_lookback
+        slope_diff = fast_slope - slow_slope
+        df['crossAngle'] = np.abs(np.degrees(np.arctan(slope_diff * 100)))
+
+        # Determine timeframe-adaptive angle threshold
+        tf_clean_angle = tf_input.lower().strip()
+        if 'min' in tf_clean_angle:
+            try:
+                tf_minutes = int(tf_clean_angle.replace('min', ''))
+            except:
+                tf_minutes = 15
+        elif 'hr' in tf_clean_angle:
+            try:
+                tf_minutes = int(tf_clean_angle.replace('hr', '')) * 60
+            except:
+                tf_minutes = 60
+        elif 'day' in tf_clean_angle:
+            tf_minutes = 1440
+        else:
+            tf_minutes = 15
+
+        angle_threshold = 3.0 if tf_minutes <= 15 else 5.0 if tf_minutes <= 30 else 10.0
+        angle_pass = df['crossAngle'] >= angle_threshold
+        df['longCondition'] = df['longCondition'] & angle_pass
+        df['shortCondition'] = df['shortCondition'] & angle_pass
+
         # =================================================================
         # SECTION 6: SIGNAL FILTERING — longValid / shortValid
         # =================================================================
@@ -507,22 +536,8 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
             if slow_val != 0:
                 tema_gap_pct = round((fast_val - slow_val) / slow_val * 100, 3)
 
-            # Calculate crossover angle
-            try:
-                angle_lookback = 3
-                if len(df) > angle_lookback + 1:
-                    fast_now = df['temaFast'].iloc[-1]
-                    fast_prev = df['temaFast'].iloc[-1 - angle_lookback]
-                    slow_now = df['temaSlow'].iloc[-1]
-                    slow_prev = df['temaSlow'].iloc[-1 - angle_lookback]
-                    price = df['close'].iloc[-1]
-
-                    fast_slope = (fast_now - fast_prev) / angle_lookback
-                    slow_slope = (slow_now - slow_prev) / angle_lookback
-                    slope_diff = (fast_slope - slow_slope) / price
-                    crossover_angle = round(np.degrees(np.arctan(slope_diff * 100)), 2)
-            except Exception:
-                crossover_angle = 0.0
+            # Crossover angle (already computed vectorized above)
+            crossover_angle = round(float(last_row['crossAngle']), 2) if not np.isnan(last_row['crossAngle']) else 0.0
         else:
             logging.info(f"  No signal on latest closed candle {last_ts}.")
 
