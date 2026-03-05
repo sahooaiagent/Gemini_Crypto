@@ -161,7 +161,7 @@ async function fetchResults() {
 function populateTfFilter() {
     const select = $('#tfFilter');
     const currentVal = select.value;
-    const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
     const tfs = [...new Set(allResults.map(r => r.Timeperiod))];
     select.innerHTML = '<option value="all">All Timeframes</option>' +
         tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
@@ -194,7 +194,7 @@ function renderResults() {
 
     // Sort
     if (currentSort.col) {
-        const numericCols = ['Angle', 'TEMA Gap', 'Daily Change'];
+        const numericCols = ['Angle', 'TEMA Gap', 'RSI', 'Daily Change'];
         const isNumeric = numericCols.includes(currentSort.col);
         filtered.sort((a, b) => {
             let va = a[currentSort.col] || '';
@@ -230,11 +230,12 @@ function renderResults() {
         const changeVal = parseFloat(changeStr);
         const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
         const name = r['Crypto Name'] || '—';
-        const tfMap = { '15min': '15m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
+        const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
         const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
         const scannerVal = r.Scanner || '—';
         const badgeMap = { 'Both': 'scanner-both', 'Qwen': 'scanner-qwen', 'AMA Pro': 'scanner-ama', 'AMA Pro Now': 'scanner-ama-now', 'Qwen Now': 'scanner-qwen-now', 'Both Now': 'scanner-both-now' };
         const scannerBadgeCls = badgeMap[r.Scanner] || '';
+        const rsiStr = r.RSI || '—';
 
         return `
             <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
@@ -248,6 +249,7 @@ function renderResults() {
                 </td>
                 <td class="mono">${r.Angle || '—'}</td>
                 <td class="mono">${r['TEMA Gap'] || '—'}</td>
+                <td class="mono">${rsiStr}</td>
                 <td class="${changeCls}">${changeStr}</td>
                 <td>${scannerBadgeCls ? `<span class="scanner-badge ${scannerBadgeCls}">${scannerVal}</span>` : scannerVal}</td>
                 <td class="mono">${r.Timestamp || '—'}</td>
@@ -552,6 +554,7 @@ function initFilterControls() {
                 signal: 'Signal',
                 angle: 'Angle',
                 temagap: 'TEMA Gap',
+                rsi: 'RSI',
                 change: 'Daily Change',
                 scanner: 'Scanner'
             };
@@ -652,10 +655,10 @@ function exportCSV() {
     }
     const hasScanner = allResults.some(r => r.Scanner);
     const headers = hasScanner
-        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'Daily Change', 'Scanner', 'Timestamp']
-        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'Daily Change', 'Timestamp'];
+        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Scanner', 'Timestamp']
+        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Timestamp'];
     const rows = allResults.map(r => {
-        const base = [r['Crypto Name'], r.Timeperiod, r.Signal, r.Angle, r['TEMA Gap'], r['Daily Change']];
+        const base = [r['Crypto Name'], r.Timeperiod, r.Signal, r.Angle, r['TEMA Gap'], r.RSI || 'N/A', r['Daily Change']];
         if (hasScanner) base.push(r.Scanner || '');
         base.push(r.Timestamp);
         return base;
