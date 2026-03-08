@@ -1,0 +1,15 @@
+[Unit]
+Description=Crypto Scanner Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Gemini_Crypto
+Environment="PATH=/home/ubuntu/Gemini_Crypto/venv/bin"
+ExecStart=/home/ubuntu/Gemini_Crypto/venv/bin/python3 /home/ubuntu/Gemini_Crypto/backend/main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
