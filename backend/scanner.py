@@ -554,17 +554,23 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
 
             # Capture RSI value at signal time
             rsi_value = round(float(last_row['rsi']), 2) if 'rsi' in last_row and not np.isnan(last_row['rsi']) else None
+
+            # Capture Open and Close values at signal time
+            open_value = round(float(last_row['open']), 8) if 'open' in last_row and not np.isnan(last_row['open']) else None
+            close_value = round(float(last_row['close']), 8) if 'close' in last_row and not np.isnan(last_row['close']) else None
         else:
             logging.info(f"  No signal on latest closed candle {last_ts}.")
             rsi_value = None
+            open_value = None
+            close_value = None
 
-        return signal, crossover_angle, tema_gap_pct, rsi_value
+        return signal, crossover_angle, tema_gap_pct, rsi_value, open_value, close_value
         
     except Exception as e:
         logging.error(f"Error in AMA PRO TEMA calculation: {str(e)}")
         import traceback
         logging.error(traceback.format_exc())
-        return None, None, None, None
+        return None, None, None, None, None, None
 
 # =============================================================================
 # MA QWEN LOGIC — Faithful Port of Pine Script
@@ -802,13 +808,17 @@ def apply_qwen_scanner(df, tf_input="1 day", use_current_candle=False, **kwargs)
         # Capture RSI value at signal time
         rsi_value = round(float(rsi_vals[last_idx]), 2) if signal and not np.isnan(rsi_vals[last_idx]) else None
 
-        return signal, None, None, rsi_value
+        # Capture Open and Close values at signal time
+        open_value = round(float(df['open'].iloc[last_idx]), 8) if signal and 'open' in df.columns and not pd.isna(df['open'].iloc[last_idx]) else None
+        close_value = round(float(close_vals[last_idx]), 8) if signal and not np.isnan(close_vals[last_idx]) else None
+
+        return signal, None, None, rsi_value, open_value, close_value
 
     except Exception as e:
         logging.error(f"Error in Qwen calculation: {str(e)}")
         import traceback
         logging.error(traceback.format_exc())
-        return None, None, None, None
+        return None, None, None, None, None, None
 
 # =============================================================================
 # MAIN SCAN ENTRY POINT
@@ -842,7 +852,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
 
                 # Run AMA Pro scanner
                 if run_ama and len(df) >= 200:
-                    signal, angle, tema_gap, rsi = await loop.run_in_executor(
+                    signal, angle, tema_gap, rsi, open_val, close_val = await loop.run_in_executor(
                         executor,
                         lambda tf=tf: apply_ama_pro_tema(
                             df.copy(),
@@ -852,11 +862,11 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         )
                     )
                     if signal:
-                        ama_signal = (signal, angle, tema_gap, rsi)
+                        ama_signal = (signal, angle, tema_gap, rsi, open_val, close_val)
 
                 # Run Qwen scanner
                 if run_qwen and len(df) >= 100:
-                    signal_q, _, _, rsi_q = await loop.run_in_executor(
+                    signal_q, _, _, rsi_q, open_val_q, close_val_q = await loop.run_in_executor(
                         executor,
                         lambda tf=tf: apply_qwen_scanner(
                             df.copy(),
@@ -864,12 +874,12 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         )
                     )
                     if signal_q:
-                        qwen_signal = (signal_q, rsi_q)
+                        qwen_signal = (signal_q, rsi_q, open_val_q, close_val_q)
 
                 # Run AMA Pro Now scanner (current/forming candle)
                 ama_now_signal = None
                 if run_ama_now and len(df) >= 200:
-                    signal, angle, tema_gap, rsi = await loop.run_in_executor(
+                    signal, angle, tema_gap, rsi, open_val, close_val = await loop.run_in_executor(
                         executor,
                         lambda tf=tf: apply_ama_pro_tema(
                             df.copy(),
@@ -880,12 +890,12 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         )
                     )
                     if signal:
-                        ama_now_signal = (signal, angle, tema_gap, rsi)
+                        ama_now_signal = (signal, angle, tema_gap, rsi, open_val, close_val)
 
                 # Run Qwen Now scanner (current/forming candle)
                 qwen_now_signal = None
                 if run_qwen_now and len(df) >= 100:
-                    signal_q, _, _, rsi_q = await loop.run_in_executor(
+                    signal_q, _, _, rsi_q, open_val_q, close_val_q = await loop.run_in_executor(
                         executor,
                         lambda tf=tf: apply_qwen_scanner(
                             df.copy(),
@@ -894,10 +904,20 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         )
                     )
                     if signal_q:
-                        qwen_now_signal = (signal_q, rsi_q)
+                        qwen_now_signal = (signal_q, rsi_q, open_val_q, close_val_q)
 
                 # ── Helper to append a result row ──
-                def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None):
+                def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None, open_val=None, close_val=None):
+                    # Determine color based on Open vs Close
+                    color = "N/A"
+                    if open_val is not None and close_val is not None:
+                        if open_val < close_val:
+                            color = "GREEN"
+                        elif open_val > close_val:
+                            color = "RED"
+                        else:
+                            color = "NEUTRAL"
+
                     results_list.append({
                         'Crypto Name': symbol,
                         'Timeperiod': tf,
@@ -907,7 +927,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
                         'Daily Change': daily_change,
                         'Scanner': scanner_label,
-                        'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'Color': color
                     })
 
                 # ── Build results for closed-candle scanners (AMA Pro / Qwen) ──
@@ -915,36 +936,36 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     # "Both" or "All" mode for closed-candle pair
                     if ama_signal and qwen_signal:
                         if ama_signal[0] == qwen_signal[0]:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Both', ama_signal[3])
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Both', ama_signal[3], ama_signal[4], ama_signal[5])
                         else:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3])
-                            add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1])
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3], ama_signal[4], ama_signal[5])
+                            add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3])
                     elif ama_signal:
-                        add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3])
+                        add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3], ama_signal[4], ama_signal[5])
                     elif qwen_signal:
-                        add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1])
+                        add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3])
                 elif run_ama and ama_signal:
-                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3])
+                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3], ama_signal[4], ama_signal[5])
                 elif run_qwen and qwen_signal:
-                    add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1])
+                    add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3])
 
                 # ── Build results for current-candle scanners (AMA Pro Now / Qwen Now) ──
                 if run_ama_now and run_qwen_now:
                     # "Both Now" or "All" mode for current-candle pair
                     if ama_now_signal and qwen_now_signal:
                         if ama_now_signal[0] == qwen_now_signal[0]:
-                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'Both Now', ama_now_signal[3])
+                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'Both Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5])
                         else:
-                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3])
-                            add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1])
+                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5])
+                            add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3])
                     elif ama_now_signal:
-                        add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3])
+                        add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5])
                     elif qwen_now_signal:
-                        add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1])
+                        add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3])
                 elif run_ama_now and ama_now_signal:
-                    add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3])
+                    add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5])
                 elif run_qwen_now and qwen_now_signal:
-                    add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1])
+                    add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3])
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
 

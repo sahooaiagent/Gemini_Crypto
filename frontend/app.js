@@ -237,6 +237,9 @@ function renderResults() {
         const scannerBadgeCls = badgeMap[r.Scanner] || '';
         const rsiStr = r.RSI || '—';
 
+        const colorStr = r.Color || 'N/A';
+        const colorCls = colorStr === 'GREEN' ? 'change-positive' : colorStr === 'RED' ? 'change-negative' : '';
+
         return `
             <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
                 <td><strong>${name}</strong></td>
@@ -258,6 +261,7 @@ function renderResults() {
                         <i class="fas fa-chart-candlestick"></i> Chart
                     </button>
                 </td>
+                <td class="${colorCls}"><strong>${colorStr}</strong></td>
             </tr>
         `;
     }).join('');
@@ -655,12 +659,13 @@ function exportCSV() {
     }
     const hasScanner = allResults.some(r => r.Scanner);
     const headers = hasScanner
-        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Scanner', 'Timestamp']
-        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Timestamp'];
+        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Scanner', 'Timestamp', 'Color']
+        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Timestamp', 'Color'];
     const rows = allResults.map(r => {
         const base = [r['Crypto Name'], r.Timeperiod, r.Signal, r.Angle, r['TEMA Gap'], r.RSI || 'N/A', r['Daily Change']];
         if (hasScanner) base.push(r.Scanner || '');
         base.push(r.Timestamp);
+        base.push(r.Color || 'N/A');
         return base;
     });
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
