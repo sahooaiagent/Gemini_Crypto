@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Union
 import os
 import sys
 
@@ -52,7 +52,7 @@ class ScanRequest(BaseModel):
     adaptation_speed: Optional[str] = "Medium"
     min_bars_between: Optional[int] = 3
     crypto_count: Optional[int] = 20
-    scanner_type: Optional[str] = "ama_pro"  # 'ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now', 'both_now', 'all'
+    scanner_type: Optional[Union[str, List[str]]] = "ama_pro"  # Single: 'ama_pro', 'qwen', 'both', etc. OR Multiple: ['ama_pro', 'ama_pro_now']
 
 # ── API ROUTES ──
 

@@ -7,7 +7,6 @@ let allResults = [];
 let scanRunning = false;
 let logPollInterval = null;
 let currentSort = { col: null, asc: true };
-let currentScannerType = 'both';
 
 // ── DOM REFS ──
 const $ = (sel) => document.querySelector(sel);
@@ -24,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initFilterControls();
     initChartModal();
     initMobileMenu();
+    initThemeToggle();
     setConnectionStatus(true);
 
     // Initial data fetch
@@ -233,7 +233,20 @@ function renderResults() {
         const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
         const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
         const scannerVal = r.Scanner || '—';
-        const badgeMap = { 'Both': 'scanner-both', 'Qwen': 'scanner-qwen', 'AMA Pro': 'scanner-ama', 'AMA Pro Now': 'scanner-ama-now', 'Qwen Now': 'scanner-qwen-now', 'Both Now': 'scanner-both-now' };
+        const badgeMap = {
+            'Both': 'scanner-both',
+            'Qwen': 'scanner-qwen',
+            'AMA Pro': 'scanner-ama',
+            'AMA Pro Now': 'scanner-ama-now',
+            'Qwen Now': 'scanner-qwen-now',
+            'Both Now': 'scanner-both-now',
+            'AMA Pro Previous (Entry)': 'scanner-ama-entry',
+            'AMA Pro Now (Entry)': 'scanner-ama-now-entry',
+            'Both Previous (Entry)': 'scanner-both-entry',
+            'Both Now (Entry)': 'scanner-both-now-entry',
+            'Qwen Previous (Entry)': 'scanner-qwen-entry',
+            'Qwen Now (Entry)': 'scanner-qwen-now-entry'
+        };
         const scannerBadgeCls = badgeMap[r.Scanner] || '';
         const rsiStr = r.RSI || '—';
 
@@ -318,12 +331,10 @@ function initScannerControls() {
         chip.addEventListener('click', () => chip.classList.toggle('active'));
     });
 
-    // Scanner type chip toggles (radio-style: only one active)
+    // Scanner type chip toggles (multi-select: can select multiple)
     $$('.scanner-chip').forEach(chip => {
         chip.addEventListener('click', () => {
-            $$('.scanner-chip').forEach(c => c.classList.remove('active'));
-            chip.classList.add('active');
-            currentScannerType = chip.dataset.scanner;
+            chip.classList.toggle('active');
         });
     });
 
@@ -364,11 +375,31 @@ async function runScan() {
     const timeframes = Array.from($$('.tf-chip.active')).map(c => c.dataset.tf);
     const adaptation_speed = $('#adaptationSpeed').value;
     const min_bars_between = parseInt($('#minBarsBetween').value) || 3;
-    const scanner_type = currentScannerType;
+
+    // Get all selected scanner types
+    const selectedScanners = Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
 
     if (timeframes.length === 0) {
         showToast('Select at least one timeframe', 'warning');
         return;
+    }
+
+    if (selectedScanners.length === 0) {
+        showToast('Select at least one scanner type', 'warning');
+        return;
+    }
+
+    // Determine scanner_type based on selections
+    let scanner_type;
+    if (selectedScanners.includes('all')) {
+        // "All" selected - use 'all' string
+        scanner_type = 'all';
+    } else if (selectedScanners.length === 1) {
+        // Single scanner - send as string
+        scanner_type = selectedScanners[0];
+    } else {
+        // Multiple specific scanners - send as array
+        scanner_type = selectedScanners;
     }
 
     scanRunning = true;
@@ -389,7 +420,7 @@ async function runScan() {
 
     // Add scan start log
     const scannerLabels = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners' };
-    const scannerLabel = scannerLabels[scanner_type] || scanner_type;
+    const scannerLabel = selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabels[s] || s).join(' + ') : (scannerLabels[selectedScanners[0]] || selectedScanners[0]);
     addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Scanner: ${scannerLabel} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
 
     // Start log polling
@@ -658,14 +689,16 @@ function exportCSV() {
         return;
     }
     const hasScanner = allResults.some(r => r.Scanner);
+    const hasSignalType = allResults.some(r => r['Signal Type']);
     const headers = hasScanner
-        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Scanner', 'Timestamp', 'Color']
-        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Timestamp', 'Color'];
+        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Scanner', 'Timestamp', 'Color', 'Signal Type']
+        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Timestamp', 'Color', 'Signal Type'];
     const rows = allResults.map(r => {
         const base = [r['Crypto Name'], r.Timeperiod, r.Signal, r.Angle, r['TEMA Gap'], r.RSI || 'N/A', r['Daily Change']];
         if (hasScanner) base.push(r.Scanner || '');
         base.push(r.Timestamp);
         base.push(r.Color || 'N/A');
+        base.push(r['Signal Type'] || 'CROSSOVER');
         return base;
     });
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -714,4 +747,39 @@ function showToast(message, type = 'info') {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 400);
     }, 4000);
+}
+
+// ══════════════════════════════════════════════════════════════
+// THEME TOGGLE
+// ══════════════════════════════════════════════════════════════
+function initThemeToggle() {
+    const toggleBtn = $('#themeToggle');
+    const icon = toggleBtn.querySelector('i');
+
+    // Load saved theme or default to dark
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(icon, savedTheme);
+
+    // Toggle theme on button click
+    toggleBtn.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateThemeIcon(icon, newTheme);
+
+        showToast(`Switched to ${newTheme} theme`, 'info');
+    });
+}
+
+function updateThemeIcon(icon, theme) {
+    if (theme === 'light') {
+        icon.classList.remove('fa-moon');
+        icon.classList.add('fa-sun');
+    } else {
+        icon.classList.remove('fa-sun');
+        icon.classList.add('fa-moon');
+    }
 }

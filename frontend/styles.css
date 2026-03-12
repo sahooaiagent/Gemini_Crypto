@@ -51,6 +51,255 @@
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+/* ── LIGHT THEME — PREMIUM ENTERPRISE ── */
+[data-theme="light"] {
+    /* Core palette - Premium light mode inspired by Bloomberg/Reuters terminals */
+    --bg-deepest: #FAFBFC;
+    --bg-deep: #FFFFFF;
+    --bg-surface: #F5F7FA;
+    --bg-elevated: #FFFFFF;
+    --bg-hover: #EDF1F7;
+
+    /* Accent colors - Rich, saturated, professional */
+    --cyan: #0086C9;
+    --cyan-dim: rgba(0, 134, 201, 0.10);
+    --cyan-glow: rgba(0, 134, 201, 0.25);
+    --green: #00A86B;
+    --green-dim: rgba(0, 168, 107, 0.10);
+    --red: #E63946;
+    --red-dim: rgba(230, 57, 70, 0.10);
+    --purple: #8B5CF6;
+    --purple-dim: rgba(139, 92, 246, 0.10);
+    --amber: #F59E0B;
+    --amber-dim: rgba(245, 158, 11, 0.10);
+
+    /* Text - Strong contrast for readability */
+    --text-primary: #1A202C;
+    --text-secondary: #4A5568;
+    --text-muted: #718096;
+
+    /* Glass - Subtle depth with shadows */
+    --glass-bg: rgba(255, 255, 255, 0.95);
+    --glass-border: rgba(0, 0, 0, 0.10);
+    --glass-border-hover: rgba(0, 134, 201, 0.35);
+}
+
+/* Light theme specific overrides for depth and shadows */
+[data-theme="light"] .card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .stat-card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .sidebar {
+    background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+    border-right: 1px solid rgba(0, 0, 0, 0.10);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .heatmap-tile {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] table {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .btn-primary {
+    box-shadow: 0 2px 4px rgba(0, 134, 201, 0.25);
+}
+
+[data-theme="light"] .btn-primary:hover {
+    box-shadow: 0 4px 8px rgba(0, 134, 201, 0.35);
+}
+
+[data-theme="light"] .signal-badge {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .scanner-badge {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .tf-badge {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-primary);
+    border: 1px solid rgba(0, 0, 0, 0.10);
+}
+
+[data-theme="light"] .bg-canvas {
+    display: none; /* Hide animated background in light mode */
+}
+
+[data-theme="light"] .ticker-tape {
+    background: linear-gradient(90deg,
+        rgba(255, 255, 255, 0.95) 0%,
+        rgba(248, 250, 252, 0.95) 50%,
+        rgba(255, 255, 255, 0.95) 100%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .modal-content {
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] .filter-dropdown {
+    background: #FFFFFF;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    color: var(--text-primary);
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] .filter-dropdown:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 3px rgba(0, 134, 201, 0.10);
+}
+
+/* Premium Detected Signals Card Styling for Light Theme */
+[data-theme="light"] #signalsCard {
+    background: linear-gradient(135deg, #FFFFFF 0%, #F9FAFB 100%);
+    border: 1px solid rgba(0, 134, 201, 0.15);
+    box-shadow:
+        0 4px 6px rgba(0, 0, 0, 0.05),
+        0 10px 20px rgba(0, 134, 201, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+}
+
+[data-theme="light"] #signalsCard .card-header {
+    background: linear-gradient(135deg, rgba(0, 134, 201, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%);
+    border-bottom: 2px solid rgba(0, 134, 201, 0.20);
+    padding: 1.25rem 1.5rem;
+}
+
+[data-theme="light"] #signalsCard .card-header h2 {
+    color: var(--cyan);
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 134, 201, 0.10);
+}
+
+[data-theme="light"] .filters-bar {
+    background: rgba(0, 134, 201, 0.03);
+    border-bottom: 1px solid rgba(0, 134, 201, 0.12);
+    padding: 1rem 1.5rem;
+}
+
+[data-theme="light"] #signalsTable {
+    background: #FFFFFF;
+    border-radius: 0;
+}
+
+[data-theme="light"] #signalsTable thead {
+    background: linear-gradient(135deg, rgba(0, 134, 201, 0.10) 0%, rgba(139, 92, 246, 0.08) 100%);
+    border-bottom: 2px solid var(--cyan);
+}
+
+[data-theme="light"] #signalsTable thead th {
+    color: var(--text-primary);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 1rem;
+    border-bottom: 2px solid rgba(0, 134, 201, 0.25);
+}
+
+[data-theme="light"] #signalsTable tbody tr {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    transition: all 0.2s ease;
+}
+
+[data-theme="light"] #signalsTable tbody tr:hover {
+    background: linear-gradient(90deg, rgba(0, 134, 201, 0.04) 0%, rgba(139, 92, 246, 0.03) 100%);
+    transform: translateX(2px);
+    box-shadow: -3px 0 0 var(--cyan);
+}
+
+[data-theme="light"] #signalsTable tbody td {
+    padding: 1rem;
+    color: var(--text-primary);
+}
+
+[data-theme="light"] #signalsTable tbody tr:nth-child(even) {
+    background: rgba(0, 134, 201, 0.02);
+}
+
+[data-theme="light"] .signal-badge.long {
+    background: linear-gradient(135deg, var(--green) 0%, #059669 100%);
+    box-shadow: 0 2px 4px rgba(0, 168, 107, 0.25), 0 0 0 1px rgba(0, 168, 107, 0.1);
+    border: 1px solid rgba(0, 168, 107, 0.3);
+}
+
+[data-theme="light"] .signal-badge.short {
+    background: linear-gradient(135deg, var(--red) 0%, #DC2626 100%);
+    box-shadow: 0 2px 4px rgba(230, 57, 70, 0.25), 0 0 0 1px rgba(230, 57, 70, 0.1);
+    border: 1px solid rgba(230, 57, 70, 0.3);
+}
+
+[data-theme="light"] .scanner-badge {
+    background: linear-gradient(135deg, var(--purple) 0%, #7C3AED 100%);
+    box-shadow: 0 2px 4px rgba(139, 92, 246, 0.20);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    font-weight: 600;
+}
+
+[data-theme="light"] .tf-badge {
+    background: linear-gradient(135deg, rgba(0, 134, 201, 0.12) 0%, rgba(0, 134, 201, 0.08) 100%);
+    color: var(--cyan);
+    border: 1px solid rgba(0, 134, 201, 0.25);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 134, 201, 0.10);
+}
+
+[data-theme="light"] .chip {
+    background: #FFFFFF;
+    border: 2px solid rgba(0, 0, 0, 0.10);
+    color: var(--text-secondary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    transition: all 0.2s ease;
+}
+
+[data-theme="light"] .chip:hover {
+    border-color: var(--cyan);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(0, 134, 201, 0.15);
+}
+
+[data-theme="light"] .chip.active {
+    background: linear-gradient(135deg, var(--cyan) 0%, #0284C7 100%);
+    color: #FFFFFF;
+    border-color: var(--cyan);
+    box-shadow: 0 3px 8px rgba(0, 134, 201, 0.35);
+    font-weight: 600;
+}
+
+[data-theme="light"] .table-footer {
+    background: linear-gradient(135deg, rgba(0, 134, 201, 0.05) 0%, rgba(139, 92, 246, 0.03) 100%);
+    border-top: 2px solid rgba(0, 134, 201, 0.15);
+    padding: 1rem 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+[data-theme="light"] .chart-btn {
+    background: linear-gradient(135deg, var(--cyan) 0%, #0284C7 100%);
+    border: 1px solid rgba(0, 134, 201, 0.3);
+    box-shadow: 0 2px 4px rgba(0, 134, 201, 0.20);
+    transition: all 0.2s ease;
+}
+
+[data-theme="light"] .chart-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 134, 201, 0.35);
+}
+
 /* ── RESET ── */
 *,
 *::before,
