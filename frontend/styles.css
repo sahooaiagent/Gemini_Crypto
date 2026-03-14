@@ -235,12 +235,14 @@
     background: linear-gradient(135deg, var(--green) 0%, #059669 100%);
     box-shadow: 0 2px 4px rgba(0, 168, 107, 0.25), 0 0 0 1px rgba(0, 168, 107, 0.1);
     border: 1px solid rgba(0, 168, 107, 0.3);
+    color: #FFFFFF;
 }
 
 [data-theme="light"] .signal-badge.short {
     background: linear-gradient(135deg, var(--red) 0%, #DC2626 100%);
     box-shadow: 0 2px 4px rgba(230, 57, 70, 0.25), 0 0 0 1px rgba(230, 57, 70, 0.1);
     border: 1px solid rgba(230, 57, 70, 0.3);
+    color: #FFFFFF;
 }
 
 [data-theme="light"] .scanner-badge {
@@ -248,6 +250,7 @@
     box-shadow: 0 2px 4px rgba(139, 92, 246, 0.20);
     border: 1px solid rgba(139, 92, 246, 0.3);
     font-weight: 600;
+    color: #FFFFFF;
 }
 
 [data-theme="light"] .tf-badge {
@@ -293,11 +296,13 @@
     border: 1px solid rgba(0, 134, 201, 0.3);
     box-shadow: 0 2px 4px rgba(0, 134, 201, 0.20);
     transition: all 0.2s ease;
+    color: #FFFFFF;
 }
 
 [data-theme="light"] .chart-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 134, 201, 0.35);
+    color: #FFFFFF;
 }
 
 /* ── RESET ── */
@@ -1329,14 +1334,14 @@ tbody tr:hover {
 }
 
 .signal-badge.long {
-    background: var(--green-dim);
-    color: var(--green);
+    background: var(--green);
+    color: #FFFFFF;
     border: 1px solid rgba(0, 255, 127, 0.2);
 }
 
 .signal-badge.short {
-    background: var(--red-dim);
-    color: var(--red);
+    background: var(--red);
+    color: #FFFFFF;
     border: 1px solid rgba(255, 71, 87, 0.2);
 }
 
@@ -1608,39 +1613,61 @@ tbody tr:hover {
     font-size: 0.78rem;
     font-weight: 600;
     font-family: var(--font-mono);
+    color: #FFFFFF;
 }
 
 .scanner-badge.scanner-ama {
-    background: var(--purple-dim);
-    color: var(--purple);
+    background: var(--purple);
 }
 
 .scanner-badge.scanner-qwen {
-    background: var(--cyan-dim);
-    color: var(--cyan);
+    background: var(--cyan);
 }
 
 .scanner-badge.scanner-both {
-    background: var(--green-dim);
-    color: var(--green);
+    background: var(--green);
 }
 
 .scanner-badge.scanner-ama-now {
-    background: var(--purple-dim);
-    color: var(--purple);
-    border: 1px dashed var(--purple);
+    background: var(--purple);
+    border: 1px dashed rgba(255, 255, 255, 0.5);
 }
 
 .scanner-badge.scanner-qwen-now {
-    background: var(--cyan-dim);
-    color: var(--cyan);
-    border: 1px dashed var(--cyan);
+    background: var(--cyan);
+    border: 1px dashed rgba(255, 255, 255, 0.5);
 }
 
 .scanner-badge.scanner-both-now {
-    background: var(--green-dim);
-    color: var(--green);
-    border: 1px dashed var(--green);
+    background: var(--green);
+    border: 1px dashed rgba(255, 255, 255, 0.5);
+}
+
+.scanner-badge.scanner-ama-entry {
+    background: var(--purple);
+}
+
+.scanner-badge.scanner-qwen-entry {
+    background: var(--cyan);
+}
+
+.scanner-badge.scanner-both-entry {
+    background: var(--green);
+}
+
+.scanner-badge.scanner-ama-now-entry {
+    background: var(--purple);
+    border: 1px dashed rgba(255, 255, 255, 0.5);
+}
+
+.scanner-badge.scanner-qwen-now-entry {
+    background: var(--cyan);
+    border: 1px dashed rgba(255, 255, 255, 0.5);
+}
+
+.scanner-badge.scanner-both-now-entry {
+    background: var(--green);
+    border: 1px dashed rgba(255, 255, 255, 0.5);
 }
 
 .scan-actions {

@@ -685,6 +685,151 @@ def calculate_vwap(df):
 
     return vwap
 
+# =============================================================================
+# HILEGA-ALMA INDICATOR FUNCTIONS
+# =============================================================================
+
+def calculate_alma(series, length=9, offset=0.85, sigma=6):
+    """
+    Arnaud Legoux Moving Average (ALMA)
+    More responsive and smoother than standard moving averages.
+    offset: Gaussian applied to offset (0=gaussian filter, 1=most recent)
+    sigma: Defines the sharpness of the gaussian curve
+    """
+    m = offset * (length - 1)
+    s = length / sigma
+
+    result = np.full(len(series), np.nan)
+
+    for i in range(length - 1, len(series)):
+        wtd_sum = 0.0
+        cum_wt = 0.0
+
+        for k in range(length):
+            # Gaussian weighting
+            w = np.exp(-((k - m) ** 2) / (2 * s * s))
+            val = series.iloc[i - length + 1 + k]
+            if not np.isnan(val):
+                wtd_sum += val * w
+                cum_wt += w
+
+        if cum_wt != 0:
+            result[i] = wtd_sum / cum_wt
+
+    return pd.Series(result, index=series.index)
+
+def calculate_true_rsi(close, length=11):
+    """
+    True RSI using ALMA smoothing instead of standard EMA.
+    Perfect for Renko charts but works excellently on candlestick charts too.
+    Returns: True RSI values (0-100 range)
+    """
+    # Calculate delta
+    delta = close.diff()
+
+    # Separate gains and losses
+    up = delta.where(delta > 0, 0)
+    down = delta.where(delta < 0, 0).abs()  # Use abs() instead of negating
+
+    # Apply ALMA smoothing (offset=0.85, sigma=5 as per the Pine Script)
+    ma_up = calculate_alma(up, length=length, offset=0.85, sigma=5)
+    ma_down = calculate_alma(down, length=length, offset=0.85, sigma=5)
+
+    # Calculate RS and RSI with better handling of edge cases
+    rs = ma_up / ma_down
+    rs = rs.replace([np.inf, -np.inf], np.nan)
+
+    # Where ma_down is 0 but ma_up > 0, RSI should be 100
+    # Where both are 0, RSI should be 50
+    true_rsi = 100 - (100 / (1 + rs))
+    true_rsi = true_rsi.fillna(50)
+
+    return true_rsi
+
+def calculate_vwma(series, length=21):
+    """
+    Volume Weighted Moving Average
+    Used for smoothing the True RSI
+    """
+    return series.rolling(window=length).mean()
+
+def calculate_tema_of_series(series, length=10):
+    """
+    Triple Exponential Moving Average applied to a series (like RSI)
+    TEMA = 3*EMA1 - 3*EMA2 + EMA3
+    """
+    ema1 = series.ewm(span=length, adjust=False).mean()
+    ema2 = ema1.ewm(span=length, adjust=False).mean()
+    ema3 = ema2.ewm(span=length, adjust=False).mean()
+    return 3 * ema1 - 3 * ema2 + ema3
+
+def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None):
+    """
+    HILEGA-ALMA Scanner
+
+    Parameters:
+    - df: DataFrame with OHLCV data
+    - scanner_mode: 'buy' or 'sell'
+    - rsi_threshold: Custom RSI threshold value (default: 10 for buy, 90 for sell)
+
+    Returns:
+    - signal: 'LONG' or 'SHORT' or None
+    - angle: Angle between True RSI and TEMA
+    - rsi_tema_gap: Gap between True RSI and TEMA (True RSI - TEMA)
+    - true_rsi: Current True RSI value
+    - daily_change: Not calculated here (passed from caller)
+    """
+    if len(df) < 100:
+        return None, None, None, None
+
+    close = df['close']
+
+    # Calculate True RSI (ALMA-based RSI)
+    true_rsi = calculate_true_rsi(close, length=11)
+
+    # Calculate VWMA of True RSI
+    vwma_rsi = calculate_vwma(true_rsi, length=21)
+
+    # Calculate TEMA of True RSI
+    tema_rsi = calculate_tema_of_series(true_rsi, length=10)
+
+    # Get the last value (current candle)
+    current_true_rsi = true_rsi.iloc[-1]
+    current_tema = tema_rsi.iloc[-1]
+
+    # Calculate RSI-TEMA Gap
+    rsi_tema_gap = current_true_rsi - current_tema
+
+    # Calculate Angle (rate of change of the gap)
+    # We'll use the difference between current gap and previous gap
+    if len(true_rsi) >= 2:
+        prev_gap = true_rsi.iloc[-2] - tema_rsi.iloc[-2]
+        angle = np.degrees(np.arctan(rsi_tema_gap - prev_gap))
+    else:
+        angle = 0.0
+
+    # Signal detection logic
+    signal = None
+
+    if scanner_mode == 'buy':
+        # HILEGA BUY: Detect when True RSI <= threshold (default 10)
+        threshold = rsi_threshold if rsi_threshold is not None else 10
+        # Debug logging
+        if current_true_rsi <= 35:  # Log when RSI is in interesting range
+            logging.info(f"HILEGA BUY: True RSI={current_true_rsi:.2f}, Threshold={threshold}, Will Signal={'YES' if current_true_rsi <= threshold else 'NO'}")
+        if current_true_rsi <= threshold:
+            signal = 'LONG'
+    elif scanner_mode == 'sell':
+        # HILEGA SELL: Detect when True RSI >= threshold (default 90)
+        threshold = rsi_threshold if rsi_threshold is not None else 90
+        # Debug logging
+        if current_true_rsi >= 65:  # Log when RSI is in interesting range
+            logging.info(f"HILEGA SELL: True RSI={current_true_rsi:.2f}, Threshold={threshold}, Will Signal={'YES' if current_true_rsi >= threshold else 'NO'}")
+        if current_true_rsi >= threshold:
+            signal = 'SHORT'
+
+    return signal, angle, rsi_tema_gap, current_true_rsi
+
 def apply_qwen_scanner(df, tf_input="1 day", use_current_candle=False, **kwargs):
     """
     Applies the MA Qwen indicator logic (matching QwenPre alert):
@@ -905,6 +1050,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     adaptation_speed = kwargs.get('adaptation_speed', 'Medium')
     min_bars_between = kwargs.get('min_bars_between', 3)
     scanner_type = kwargs.get('scanner_type', 'ama_pro')
+    hilega_buy_rsi = kwargs.get('hilega_buy_rsi', 10)
+    hilega_sell_rsi = kwargs.get('hilega_sell_rsi', 90)
 
     # Support for multiple scanner types (list) or single scanner type (string)
     if isinstance(scanner_type, list):
@@ -913,12 +1060,16 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_qwen = 'qwen' in scanner_type or 'both' in scanner_type or 'all' in scanner_type
         run_ama_now = 'ama_pro_now' in scanner_type or 'both_now' in scanner_type or 'all' in scanner_type
         run_qwen_now = 'qwen_now' in scanner_type or 'both_now' in scanner_type or 'all' in scanner_type
+        run_hilega_buy = 'hilega_buy' in scanner_type
+        run_hilega_sell = 'hilega_sell' in scanner_type
     else:
         # Single scanner type (original logic)
         run_ama = scanner_type in ('ama_pro', 'both', 'all')
         run_qwen = scanner_type in ('qwen', 'both', 'all')
         run_ama_now = scanner_type in ('ama_pro_now', 'both_now', 'all')
         run_qwen_now = scanner_type in ('qwen_now', 'both_now', 'all')
+        run_hilega_buy = scanner_type == 'hilega_buy'
+        run_hilega_sell = scanner_type == 'hilega_sell'
 
     async with semaphore:
         for tf in timeframes:
@@ -1056,6 +1207,57 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6])
                 elif run_qwen_now and qwen_now_signal:
                     add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
+
+                # ── HILEGA SCANNER LOGIC ──
+                # HILEGA uses a different result structure and is mutually exclusive with AMA/Qwen
+                if run_hilega_buy or run_hilega_sell:
+                    logging.info(f"HILEGA Scanner activated for {symbol} on {tf} - BUY={run_hilega_buy}, SELL={run_hilega_sell}")
+                    # HILEGA BUY scanner
+                    if run_hilega_buy and len(df) >= 100:
+                        signal, angle, rsi_tema_gap, true_rsi = await loop.run_in_executor(
+                            executor,
+                            lambda: apply_hilega_scanner(df.copy(), scanner_mode='buy', rsi_threshold=hilega_buy_rsi)
+                        )
+                        rsi_str = f"{true_rsi:.2f}" if true_rsi is not None else "None"
+                        logging.info(f"HILEGA BUY {symbol} {tf}: RSI={rsi_str}, Threshold={hilega_buy_rsi}, Signal={signal}")
+                        if signal:
+                            # Add to HILEGA results (different format)
+                            results_list.append({
+                                'Crypto Name': symbol,
+                                'Timeperiod': tf,
+                                'Signal': signal,
+                                'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
+                                'RSI-TEMA': f"{rsi_tema_gap:+.2f}" if rsi_tema_gap is not None else "N/A",
+                                'RSI': f"{true_rsi:.2f}" if true_rsi is not None else "N/A",
+                                'Daily Change': daily_change,
+                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                'Scanner': 'HILEGA BUY'
+                            })
+                            logging.info(f"✅ HILEGA BUY SIGNAL ADDED: {symbol} {tf} RSI={true_rsi:.2f}")
+
+                    # HILEGA SELL scanner
+                    if run_hilega_sell and len(df) >= 100:
+                        signal, angle, rsi_tema_gap, true_rsi = await loop.run_in_executor(
+                            executor,
+                            lambda: apply_hilega_scanner(df.copy(), scanner_mode='sell', rsi_threshold=hilega_sell_rsi)
+                        )
+                        rsi_str = f"{true_rsi:.2f}" if true_rsi is not None else "None"
+                        logging.info(f"HILEGA SELL {symbol} {tf}: RSI={rsi_str}, Threshold={hilega_sell_rsi}, Signal={signal}")
+                        if signal:
+                            # Add to HILEGA results (different format)
+                            results_list.append({
+                                'Crypto Name': symbol,
+                                'Timeperiod': tf,
+                                'Signal': signal,
+                                'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
+                                'RSI-TEMA': f"{rsi_tema_gap:+.2f}" if rsi_tema_gap is not None else "N/A",
+                                'RSI': f"{true_rsi:.2f}" if true_rsi is not None else "N/A",
+                                'Daily Change': daily_change,
+                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                'Scanner': 'HILEGA SELL'
+                            })
+                            logging.info(f"✅ HILEGA SELL SIGNAL ADDED: {symbol} {tf} RSI={true_rsi:.2f}")
+
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
 

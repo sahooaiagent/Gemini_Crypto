@@ -42,6 +42,7 @@ logging.getLogger().addHandler(console_handler)
 # Store latest scan results in memory for fast access
 latest_scan = {
     "results": [],
+    "hilega_results": [],
     "scan_time": None,
     "duration": None
 }
@@ -53,6 +54,8 @@ class ScanRequest(BaseModel):
     min_bars_between: Optional[int] = 3
     crypto_count: Optional[int] = 20
     scanner_type: Optional[Union[str, List[str]]] = "ama_pro"  # Single: 'ama_pro', 'qwen', 'both', etc. OR Multiple: ['ama_pro', 'ama_pro_now']
+    hilega_buy_rsi: Optional[int] = 10  # HILEGA BUY RSI threshold
+    hilega_sell_rsi: Optional[int] = 90  # HILEGA SELL RSI threshold
 
 # ── API ROUTES ──
 
@@ -76,27 +79,42 @@ async def trigger_scan(request: ScanRequest):
         
         # Run scanner (await async call)
         results = await scanner.run_scan(
-            request.indices, 
-            request.timeframes, 
+            request.indices,
+            request.timeframes,
             log_file,
             adaptation_speed=request.adaptation_speed,
             min_bars_between=request.min_bars_between,
             crypto_count=request.crypto_count,
-            scanner_type=request.scanner_type
+            scanner_type=request.scanner_type,
+            hilega_buy_rsi=request.hilega_buy_rsi,
+            hilega_sell_rsi=request.hilega_sell_rsi
         )
         
         duration = round(time.time() - start_time, 2)
         scan_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
+        # Separate HILEGA results from AMA/Qwen results
+        hilega_results = []
+        ama_qwen_results = []
+
+        for result in results:
+            scanner_label = result.get('Scanner', '')
+            if 'HILEGA' in scanner_label:
+                hilega_results.append(result)
+            else:
+                ama_qwen_results.append(result)
+
         # Store in memory
-        latest_scan["results"] = results
+        latest_scan["results"] = ama_qwen_results
+        latest_scan["hilega_results"] = hilega_results
         latest_scan["scan_time"] = scan_time
         latest_scan["duration"] = duration
-        
-        logging.info(f"Scan completed successfully in {duration}s. Found {len(results)} signal(s).")
+
+        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen signal(s) and {len(hilega_results)} HILEGA signal(s).")
         return {
             "status": "success",
-            "data": results,
+            "data": ama_qwen_results,
+            "hilega_data": hilega_results,
             "scan_time": scan_time,
             "duration": duration
         }
@@ -109,6 +127,7 @@ async def get_results():
     """Return the latest scan results"""
     return {
         "results": latest_scan["results"],
+        "hilega_results": latest_scan["hilega_results"],
         "scan_time": latest_scan["scan_time"],
         "duration": latest_scan["duration"]
     }

@@ -4,9 +4,11 @@
 
 const API_URL = 'http://localhost:8001';
 let allResults = [];
+let allHilegaResults = [];
 let scanRunning = false;
 let logPollInterval = null;
 let currentSort = { col: null, asc: true };
+let currentHilegaSort = { col: null, asc: true };
 
 // ── DOM REFS ──
 const $ = (sel) => document.querySelector(sel);
@@ -21,7 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initTickerTape();
     initScannerControls();
     initFilterControls();
-    initChartModal();
     initMobileMenu();
     initThemeToggle();
     setConnectionStatus(true);
@@ -147,11 +148,14 @@ async function fetchResults() {
         if (!res.ok) return;
         const data = await res.json();
         allResults = data.results || [];
+        allHilegaResults = data.hilega_results || [];
         if (data.scan_time) {
             updateLastScanTime(data.scan_time);
         }
         populateTfFilter();
+        populateHilegaTfFilter();
         renderResults();
+        renderHilegaResults();
         updateStats();
     } catch (e) {
         // API may not have /api/results yet
@@ -252,6 +256,7 @@ function renderResults() {
 
         const colorStr = r.Color || 'N/A';
         const colorCls = colorStr === 'GREEN' ? 'change-positive' : colorStr === 'RED' ? 'change-negative' : '';
+        const candleDisplay = colorStr === 'GREEN' ? 'Bullish' : colorStr === 'RED' ? 'Bearish' : colorStr === 'NEUTRAL' ? 'Neutral' : 'N/A';
 
         return `
             <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
@@ -269,15 +274,98 @@ function renderResults() {
                 <td class="${changeCls}">${changeStr}</td>
                 <td>${scannerBadgeCls ? `<span class="scanner-badge ${scannerBadgeCls}">${scannerVal}</span>` : scannerVal}</td>
                 <td class="mono">${r.Timestamp || '—'}</td>
-                <td>
-                    <button class="chart-btn" onclick="openChart('${name}', '${r.Timeperiod}')">
-                        <i class="fas fa-chart-candlestick"></i> Chart
-                    </button>
-                </td>
-                <td class="${colorCls}"><strong>${colorStr}</strong></td>
+                <td class="${colorCls}"><strong>${candleDisplay}</strong></td>
             </tr>
         `;
     }).join('');
+}
+
+function renderHilegaResults() {
+    const body = $('#hilegaSignalsBody');
+    const empty = $('#hilegaEmptyState');
+    const countEl = $('#hilegaResultCount');
+    const searchVal = ($('#hilegaSearchInput').value || '').toLowerCase();
+    const signalFilter = $('#hilegaSignalFilterChips .chip.active')?.dataset?.filter || 'all';
+    const tfFilter = $('#hilegaTfFilter').value;
+
+    let filtered = allHilegaResults.filter(r => {
+        if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
+        if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
+        if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
+        return true;
+    });
+
+    // Sort
+    if (currentHilegaSort.col) {
+        const numericCols = ['Angle', 'RSI-TEMA', 'RSI', 'Daily Change'];
+        const isNumeric = numericCols.includes(currentHilegaSort.col);
+        filtered.sort((a, b) => {
+            let va = a[currentHilegaSort.col] || '';
+            let vb = b[currentHilegaSort.col] || '';
+            if (isNumeric) {
+                va = parseFloat(String(va).replace(/[°%,]/g, '')) || 0;
+                vb = parseFloat(String(vb).replace(/[°%,]/g, '')) || 0;
+            } else {
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+            }
+            if (va < vb) return currentHilegaSort.asc ? -1 : 1;
+            if (va > vb) return currentHilegaSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+
+    if (filtered.length === 0) {
+        body.innerHTML = '';
+        empty.style.display = 'block';
+        countEl.textContent = '0 results';
+        return;
+    }
+
+    empty.style.display = 'none';
+    countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
+
+    body.innerHTML = filtered.map((r, i) => {
+        const sigCls = r.Signal === 'LONG' ? 'long' : 'short';
+        const sigIcon = r.Signal === 'LONG' ? 'fa-arrow-up' : 'fa-arrow-down';
+        const changeStr = r['Daily Change'] || '—';
+        const changeVal = parseFloat(changeStr);
+        const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
+        const name = r['Crypto Name'] || '—';
+        const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
+        const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
+        const angleStr = r.Angle || '—';
+        const rsiTemaStr = r['RSI-TEMA'] || '—';
+        const rsiStr = r.RSI || '—';
+
+        return `
+            <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
+                <td><strong>${name}</strong></td>
+                <td><span class="tf-badge">${tfDisplay}</span></td>
+                <td>
+                    <span class="signal-badge ${sigCls}">
+                        <i class="fas ${sigIcon}"></i>
+                        ${r.Signal}
+                    </span>
+                </td>
+                <td class="mono">${angleStr}</td>
+                <td class="mono">${rsiTemaStr}</td>
+                <td class="mono">${rsiStr}</td>
+                <td class="${changeCls}">${changeStr}</td>
+                <td class="mono">${r.Timestamp || '—'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function populateHilegaTfFilter() {
+    const select = $('#hilegaTfFilter');
+    const currentVal = select.value;
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
+    const tfs = [...new Set(allHilegaResults.map(r => r.Timeperiod))];
+    select.innerHTML = '<option value="all">All Timeframes</option>' +
+        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
+    select.value = tfs.includes(currentVal) ? currentVal : 'all';
 }
 
 function updateStats() {
@@ -332,9 +420,37 @@ function initScannerControls() {
     });
 
     // Scanner type chip toggles (multi-select: can select multiple)
+    // HILEGA scanners are mutually exclusive with AMA/Qwen scanners
     $$('.scanner-chip').forEach(chip => {
         chip.addEventListener('click', () => {
-            chip.classList.toggle('active');
+            const scannerType = chip.dataset.scanner;
+            const hilegaScanners = ['hilega_buy', 'hilega_sell'];
+            const amaScanners = ['ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now', 'both_now', 'all'];
+
+            // Check if clicking a HILEGA scanner
+            if (hilegaScanners.includes(scannerType)) {
+                // If activating HILEGA, deactivate all AMA scanners
+                if (!chip.classList.contains('active')) {
+                    $$('.scanner-chip').forEach(c => {
+                        if (amaScanners.includes(c.dataset.scanner)) {
+                            c.classList.remove('active');
+                        }
+                    });
+                }
+                chip.classList.toggle('active');
+            }
+            // Check if clicking an AMA/Qwen scanner
+            else if (amaScanners.includes(scannerType)) {
+                // If activating AMA, deactivate all HILEGA scanners
+                if (!chip.classList.contains('active')) {
+                    $$('.scanner-chip').forEach(c => {
+                        if (hilegaScanners.includes(c.dataset.scanner)) {
+                            c.classList.remove('active');
+                        }
+                    });
+                }
+                chip.classList.toggle('active');
+            }
         });
     });
 
@@ -356,6 +472,9 @@ function initScannerControls() {
     // Export CSV
     $('#exportCsvBtn').addEventListener('click', exportCSV);
 
+    // Export Hilega CSV
+    $('#exportHilegaCsvBtn').addEventListener('click', exportHilegaCSV);
+
     // Clear logs
     const clearLogHTML = `
             <div class="log-line system">
@@ -375,6 +494,10 @@ async function runScan() {
     const timeframes = Array.from($$('.tf-chip.active')).map(c => c.dataset.tf);
     const adaptation_speed = $('#adaptationSpeed').value;
     const min_bars_between = parseInt($('#minBarsBetween').value) || 3;
+
+    // Get HILEGA RSI thresholds
+    const hilega_buy_rsi = parseInt($('#hilegaBuyRsi').value) || 10;
+    const hilega_sell_rsi = parseInt($('#hilegaSellRsi').value) || 90;
 
     // Get all selected scanner types
     const selectedScanners = Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
@@ -415,7 +538,9 @@ async function runScan() {
 
     // Clear previous results
     allResults = [];
+    allHilegaResults = [];
     renderResults();
+    renderHilegaResults();
     updateStats();
 
     // Add scan start log
@@ -445,7 +570,9 @@ async function runScan() {
                 adaptation_speed,
                 min_bars_between,
                 crypto_count,
-                scanner_type
+                scanner_type,
+                hilega_buy_rsi,
+                hilega_sell_rsi
             })
         });
 
@@ -455,19 +582,32 @@ async function runScan() {
 
         const data = await res.json();
         allResults = data.data || [];
+        allHilegaResults = data.hilega_data || [];
+
+        const totalSignals = allResults.length + allHilegaResults.length;
 
         updateProgress(100, 'Scan complete!');
-        addLogLine('success', `✅ SCAN COMPLETED — ${allResults.length} signal(s) found`);
+        if (allHilegaResults.length > 0) {
+            addLogLine('success', `✅ SCAN COMPLETED — ${allHilegaResults.length} HILEGA signal(s) found`);
+        } else {
+            addLogLine('success', `✅ SCAN COMPLETED — ${allResults.length} signal(s) found`);
+        }
 
         populateTfFilter();
+        populateHilegaTfFilter();
         renderResults();
+        renderHilegaResults();
         updateStats();
         updateLastScanTime(new Date().toISOString());
 
-        showToast(`Scan complete! ${allResults.length} signal(s) found.`, 'success');
+        if (allHilegaResults.length > 0) {
+            showToast(`Scan complete! ${allHilegaResults.length} HILEGA signal(s) found.`, 'success');
+        } else {
+            showToast(`Scan complete! ${allResults.length} signal(s) found.`, 'success');
+        }
 
         // Switch to dashboard tab to show results
-        if (allResults.length > 0) {
+        if (totalSignals > 0) {
             setTimeout(() => {
                 $$('.nav-link').forEach(l => l.classList.remove('active'));
                 $('#nav-dashboard').classList.add('active');
@@ -581,7 +721,7 @@ function initFilterControls() {
     });
 
     // Column sorting
-    $$('th.sortable').forEach(th => {
+    $$('#signalsTable th.sortable').forEach(th => {
         th.addEventListener('click', () => {
             const colMap = {
                 name: 'Crypto Name',
@@ -602,70 +742,63 @@ function initFilterControls() {
             }
 
             // Update sort icons
-            $$('th.sortable').forEach(t => {
+            $$('#signalsTable th.sortable').forEach(t => {
                 t.classList.remove('sorted-asc', 'sorted-desc');
             });
             th.classList.add(currentSort.asc ? 'sorted-asc' : 'sorted-desc');
             renderResults();
         });
     });
-}
 
-// ══════════════════════════════════════════════════════════════
-// CHART MODAL (TradingView Embed)
-// ══════════════════════════════════════════════════════════════
-function initChartModal() {
-    $('#chartModalClose').addEventListener('click', closeChart);
-    $('#chartModal').addEventListener('click', (e) => {
-        if (e.target === $('#chartModal')) closeChart();
+    // ═══ HILEGA FILTER CONTROLS ═══
+
+    // Hilega signal filter chips
+    $$('#hilegaSignalFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#hilegaSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            renderHilegaResults();
+        });
     });
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeChart();
+
+    // Hilega search
+    let hilegaSearchTimeout;
+    $('#hilegaSearchInput').addEventListener('input', () => {
+        clearTimeout(hilegaSearchTimeout);
+        hilegaSearchTimeout = setTimeout(renderHilegaResults, 200);
     });
-}
 
-function openChart(coinName, timeframe) {
-    // Map Binance symbols to TradingView
-    // Binance symbol example: BTC/USDT or BTC/USDT:USDT (perpetual)
-    // TradingView example: BINANCE:BTCUSDT or BINANCE:BTCUSDT.P
+    // Hilega timeframe filter
+    $('#hilegaTfFilter').addEventListener('change', renderHilegaResults);
 
-    const tvTimeframes = {
-        '15min': '15',
-        '30min': '30',
-        '45min': '45',
-        '1hr': '60',
-        '2hr': '120',
-        '4hr': '240',
-        '1 day': 'D',
-        '1 week': 'W'
-    };
+    // Hilega column sorting
+    $$('#hilegaSignalsTable th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const colMap = {
+                name: 'Crypto Name',
+                timeframe: 'Timeperiod',
+                signal: 'Signal',
+                angle: 'Angle',
+                rsitema: 'RSI-TEMA',
+                rsi: 'RSI',
+                change: 'Daily Change'
+            };
+            const col = colMap[th.dataset.col];
+            if (currentHilegaSort.col === col) {
+                currentHilegaSort.asc = !currentHilegaSort.asc;
+            } else {
+                currentHilegaSort.col = col;
+                currentHilegaSort.asc = true;
+            }
 
-    let tvSymbol = coinName.replace('/', '').replace(':', '');
-    if (coinName.includes(':')) {
-        tvSymbol += '.P';
-    }
-    tvSymbol = `BINANCE:${tvSymbol}`;
-    const interval = tvTimeframes[timeframe] || '60';
-
-    $('#chartModalTitle').textContent = `${coinName} — ${timeframe}`;
-
-    // TradingView Advanced Chart Widget
-    const container = $('#tradingviewWidget');
-    container.innerHTML = `
-        <iframe
-            src="https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=${encodeURIComponent(tvSymbol)}&interval=${interval}&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=0B1120&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=1&studies_overrides={}&overrides={}&enabled_features=[]&disabled_features=[]&showpopupbutton=1&locale=en"
-            style="width:100%;height:100%;border:none;"
-            allowtransparency="true"
-            allowfullscreen>
-        </iframe>
-    `;
-
-    $('#chartModal').classList.add('active');
-}
-
-function closeChart() {
-    $('#chartModal').classList.remove('active');
-    $('#tradingviewWidget').innerHTML = '';
+            // Update sort icons
+            $$('#hilegaSignalsTable th.sortable').forEach(t => {
+                t.classList.remove('sorted-asc', 'sorted-desc');
+            });
+            th.classList.add(currentHilegaSort.asc ? 'sorted-asc' : 'sorted-desc');
+            renderHilegaResults();
+        });
+    });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -691,13 +824,14 @@ function exportCSV() {
     const hasScanner = allResults.some(r => r.Scanner);
     const hasSignalType = allResults.some(r => r['Signal Type']);
     const headers = hasScanner
-        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Scanner', 'Timestamp', 'Color', 'Signal Type']
-        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Timestamp', 'Color', 'Signal Type'];
+        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Scanner', 'Timestamp', 'Candle', 'Signal Type']
+        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Timestamp', 'Candle', 'Signal Type'];
     const rows = allResults.map(r => {
         const base = [r['Crypto Name'], r.Timeperiod, r.Signal, r.Angle, r['TEMA Gap'], r.RSI || 'N/A', r['Daily Change']];
         if (hasScanner) base.push(r.Scanner || '');
         base.push(r.Timestamp);
-        base.push(r.Color || 'N/A');
+        const candleValue = r.Color === 'GREEN' ? 'Bullish' : r.Color === 'RED' ? 'Bearish' : r.Color === 'NEUTRAL' ? 'Neutral' : 'N/A';
+        base.push(candleValue);
         base.push(r['Signal Type'] || 'CROSSOVER');
         return base;
     });
@@ -709,6 +843,34 @@ function exportCSV() {
     a.click();
     URL.revokeObjectURL(url);
     showToast('CSV exported', 'success');
+}
+
+function exportHilegaCSV() {
+    if (allHilegaResults.length === 0) {
+        showToast('No Hilega data to export', 'warning');
+        return;
+    }
+    const headers = ['Asset', 'Timeframe', 'Signal', 'Angle', 'RSI-TEMA', 'RSI', 'Daily Change', 'Timestamp'];
+    const rows = allHilegaResults.map(r => {
+        return [
+            r['Crypto Name'],
+            r.Timeperiod,
+            r.Signal,
+            r.Angle || '',
+            r['RSI-TEMA'] || '',
+            r.RSI || '',
+            r['Daily Change'] || '',
+            r.Timestamp
+        ];
+    });
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `gemini_hilega_scan_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Hilega CSV exported', 'success');
 }
 
 // ══════════════════════════════════════════════════════════════
