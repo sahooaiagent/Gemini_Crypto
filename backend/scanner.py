@@ -123,17 +123,22 @@ async def fetch_binance_data(symbol, timeframe, limit=500):
         '8hr': '8h',
         '12hr': '12h',
         '1 day': '1d',
+        '2 day': '1d',
+        '3 day': '1d',
+        '4 day': '1d',
+        '5 day': '1d',
+        '6 day': '1d',
         '1 week': '1w',
         '1 month': '1M'
     }
-    
+
     binance_tf = tf_map.get(timeframe, '15m')
-    
+
     try:
         logging.info(f"Fetching {symbol} from Binance at {timeframe} interval...")
         # Use await for async fetch_ohlcv
         ohlcv = await exchange.fetch_ohlcv(symbol, timeframe=binance_tf, limit=limit + 50)
-        
+
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
         df.set_index('timestamp', inplace=True)
@@ -144,15 +149,30 @@ async def fetch_binance_data(symbol, timeframe, limit=500):
             '10min': '10min',
             '20min': '20min',
             '25min': '25min',
-            '45min': '45min'
+            '45min': '45min',
+            '2 day': '2D',
+            '3 day': '3D',
+            '4 day': '4D',
+            '5 day': '5D',
+            '6 day': '6D'
         }
 
         if timeframe in resample_map:
-            df = df.resample(resample_map[timeframe]).agg({
-                'open': 'first', 'high': 'max',
-                'low': 'min', 'close': 'last',
-                'volume': 'sum'
-            }).dropna()
+            # For multi-day timeframes, align with TradingView's candle boundaries
+            if timeframe in ['2 day', '3 day', '4 day', '5 day', '6 day']:
+                # Multi-day candles use origin='epoch' to align with TradingView
+                df = df.resample(resample_map[timeframe], origin='epoch').agg({
+                    'open': 'first', 'high': 'max',
+                    'low': 'min', 'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
+            else:
+                # For minute-based timeframes, standard resampling is fine
+                df = df.resample(resample_map[timeframe]).agg({
+                    'open': 'first', 'high': 'max',
+                    'low': 'min', 'close': 'last',
+                    'volume': 'sum'
+                }).dropna()
 
         return df.tail(limit)
     except Exception as e:
@@ -692,66 +712,81 @@ def calculate_vwap(df):
 def calculate_alma(series, length=9, offset=0.85, sigma=6):
     """
     Arnaud Legoux Moving Average (ALMA)
-    More responsive and smoother than standard moving averages.
+    Exact implementation matching TradingView's ta.alma
+
     offset: Gaussian applied to offset (0=gaussian filter, 1=most recent)
     sigma: Defines the sharpness of the gaussian curve
+
+    Formula:
+    m = offset * (length - 1)
+    s = length / sigma
+    wtd = exp(-1 * pow(i - m, 2) / (2 * pow(s, 2)))
+    sum = Σ(price[i] * wtd[i]) / Σ(wtd[i])
     """
+    values = series.values
     m = offset * (length - 1)
     s = length / sigma
 
-    result = np.full(len(series), np.nan)
+    result = np.full(len(values), np.nan)
 
-    for i in range(length - 1, len(series)):
-        wtd_sum = 0.0
-        cum_wt = 0.0
+    # Pre-calculate weights (they're the same for every window)
+    weights = np.array([np.exp(-((i - m) ** 2) / (2 * s * s)) for i in range(length)])
 
-        for k in range(length):
-            # Gaussian weighting
-            w = np.exp(-((k - m) ** 2) / (2 * s * s))
-            val = series.iloc[i - length + 1 + k]
-            if not np.isnan(val):
-                wtd_sum += val * w
-                cum_wt += w
+    for i in range(length - 1, len(values)):
+        window = values[i - length + 1:i + 1]
 
-        if cum_wt != 0:
-            result[i] = wtd_sum / cum_wt
+        # Handle NaN values
+        valid_mask = ~np.isnan(window)
+        if np.any(valid_mask):
+            valid_weights = weights[valid_mask]
+            valid_values = window[valid_mask]
+            result[i] = np.sum(valid_values * valid_weights) / np.sum(valid_weights)
 
     return pd.Series(result, index=series.index)
 
 def calculate_true_rsi(close, length=11):
     """
     True RSI using ALMA smoothing instead of standard EMA.
-    Perfect for Renko charts but works excellently on candlestick charts too.
-    Returns: True RSI values (0-100 range)
+    Exact implementation matching TradingView Pine Script.
+
+    Pine Script reference:
+    delta = src - src[1]
+    up := delta > 0 ? delta : 0
+    down := delta < 0 ? -delta : 0
     """
-    # Calculate delta
     delta = close.diff()
 
-    # Separate gains and losses
-    up = delta.where(delta > 0, 0)
-    down = delta.where(delta < 0, 0).abs()  # Use abs() instead of negating
+    # Separate gains and losses (matching Pine Script exactly)
+    up = pd.Series(np.where(delta > 0, delta, 0), index=close.index)
+    down = pd.Series(np.where(delta < 0, -delta, 0), index=close.index)
 
     # Apply ALMA smoothing (offset=0.85, sigma=5 as per the Pine Script)
     ma_up = calculate_alma(up, length=length, offset=0.85, sigma=5)
     ma_down = calculate_alma(down, length=length, offset=0.85, sigma=5)
 
-    # Calculate RS and RSI with better handling of edge cases
+    # Calculate RS and RSI (matching Pine Script: 100 - (100 / (1 + rs)))
     rs = ma_up / ma_down
-    rs = rs.replace([np.inf, -np.inf], np.nan)
-
-    # Where ma_down is 0 but ma_up > 0, RSI should be 100
-    # Where both are 0, RSI should be 50
+    rs = rs.replace([np.inf], np.nan)
     true_rsi = 100 - (100 / (1 + rs))
+
+    # Fill NaN values with 50 (neutral RSI)
     true_rsi = true_rsi.fillna(50)
 
     return true_rsi
 
-def calculate_vwma(series, length=21):
+def calculate_vwma(series, volume, length=21):
     """
     Volume Weighted Moving Average
+    VWMA = sum(close * volume) / sum(volume) over the period
     Used for smoothing the True RSI
     """
-    return series.rolling(window=length).mean()
+    if volume is None:
+        # Fallback to SMA if no volume data available
+        return series.rolling(window=length).mean()
+
+    # Calculate VWMA: sum(value * volume) / sum(volume)
+    result = (series * volume).rolling(window=length).sum() / volume.rolling(window=length).sum()
+    return result
 
 def calculate_tema_of_series(series, length=10):
     """
@@ -782,26 +817,40 @@ def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None):
     if len(df) < 100:
         return None, None, None, None
 
+    # IMPORTANT: For HILEGA scanner, we need to show the FORMING candle RSI
+    # This matches TradingView's behavior where the indicator shows real-time
+    # values for the current forming candle.
+    #
+    # User confirmed they want to see the forming candle RSI value (e.g., 84.247)
+    # not the last completed candle RSI value (e.g., 75.133)
+    #
+    # Therefore, we DO NOT drop the last row - we use ALL available data
+    # including the forming candle.
+
+    if len(df) < 100:
+        return None, None, None, None
+
     close = df['close']
+    volume = df['volume'] if 'volume' in df.columns else None
 
     # Calculate True RSI (ALMA-based RSI)
     true_rsi = calculate_true_rsi(close, length=11)
 
-    # Calculate VWMA of True RSI
-    vwma_rsi = calculate_vwma(true_rsi, length=21)
+    # Calculate VWMA of True RSI (using volume weighting)
+    vwma_rsi = calculate_vwma(true_rsi, volume, length=21)
 
     # Calculate TEMA of True RSI
     tema_rsi = calculate_tema_of_series(true_rsi, length=10)
 
-    # Get the last value (current candle)
+    # Get the last value (latest candle - includes forming candle for real-time values)
     current_true_rsi = true_rsi.iloc[-1]
     current_tema = tema_rsi.iloc[-1]
+    current_vwma = vwma_rsi.iloc[-1]
 
     # Calculate RSI-TEMA Gap
     rsi_tema_gap = current_true_rsi - current_tema
 
     # Calculate Angle (rate of change of the gap)
-    # We'll use the difference between current gap and previous gap
     if len(true_rsi) >= 2:
         prev_gap = true_rsi.iloc[-2] - tema_rsi.iloc[-2]
         angle = np.degrees(np.arctan(rsi_tema_gap - prev_gap))
@@ -812,19 +861,11 @@ def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None):
     signal = None
 
     if scanner_mode == 'buy':
-        # HILEGA BUY: Detect when True RSI <= threshold (default 10)
         threshold = rsi_threshold if rsi_threshold is not None else 10
-        # Debug logging
-        if current_true_rsi <= 35:  # Log when RSI is in interesting range
-            logging.info(f"HILEGA BUY: True RSI={current_true_rsi:.2f}, Threshold={threshold}, Will Signal={'YES' if current_true_rsi <= threshold else 'NO'}")
         if current_true_rsi <= threshold:
             signal = 'LONG'
     elif scanner_mode == 'sell':
-        # HILEGA SELL: Detect when True RSI >= threshold (default 90)
         threshold = rsi_threshold if rsi_threshold is not None else 90
-        # Debug logging
-        if current_true_rsi >= 65:  # Log when RSI is in interesting range
-            logging.info(f"HILEGA SELL: True RSI={current_true_rsi:.2f}, Threshold={threshold}, Will Signal={'YES' if current_true_rsi >= threshold else 'NO'}")
         if current_true_rsi >= threshold:
             signal = 'SHORT'
 
@@ -1211,17 +1252,13 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 # ── HILEGA SCANNER LOGIC ──
                 # HILEGA uses a different result structure and is mutually exclusive with AMA/Qwen
                 if run_hilega_buy or run_hilega_sell:
-                    logging.info(f"HILEGA Scanner activated for {symbol} on {tf} - BUY={run_hilega_buy}, SELL={run_hilega_sell}")
                     # HILEGA BUY scanner
                     if run_hilega_buy and len(df) >= 100:
                         signal, angle, rsi_tema_gap, true_rsi = await loop.run_in_executor(
                             executor,
                             lambda: apply_hilega_scanner(df.copy(), scanner_mode='buy', rsi_threshold=hilega_buy_rsi)
                         )
-                        rsi_str = f"{true_rsi:.2f}" if true_rsi is not None else "None"
-                        logging.info(f"HILEGA BUY {symbol} {tf}: RSI={rsi_str}, Threshold={hilega_buy_rsi}, Signal={signal}")
                         if signal:
-                            # Add to HILEGA results (different format)
                             results_list.append({
                                 'Crypto Name': symbol,
                                 'Timeperiod': tf,
@@ -1233,7 +1270,6 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                 'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 'Scanner': 'HILEGA BUY'
                             })
-                            logging.info(f"✅ HILEGA BUY SIGNAL ADDED: {symbol} {tf} RSI={true_rsi:.2f}")
 
                     # HILEGA SELL scanner
                     if run_hilega_sell and len(df) >= 100:
@@ -1241,10 +1277,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             executor,
                             lambda: apply_hilega_scanner(df.copy(), scanner_mode='sell', rsi_threshold=hilega_sell_rsi)
                         )
-                        rsi_str = f"{true_rsi:.2f}" if true_rsi is not None else "None"
-                        logging.info(f"HILEGA SELL {symbol} {tf}: RSI={rsi_str}, Threshold={hilega_sell_rsi}, Signal={signal}")
                         if signal:
-                            # Add to HILEGA results (different format)
                             results_list.append({
                                 'Crypto Name': symbol,
                                 'Timeperiod': tf,
@@ -1256,7 +1289,6 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                 'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 'Scanner': 'HILEGA SELL'
                             })
-                            logging.info(f"✅ HILEGA SELL SIGNAL ADDED: {symbol} {tf} RSI={true_rsi:.2f}")
 
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
