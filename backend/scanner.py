@@ -744,15 +744,17 @@ def calculate_alma(series, length=9, offset=0.85, sigma=6):
 
     return pd.Series(result, index=series.index)
 
-def calculate_true_rsi(close, length=11):
+def calculate_true_rsi_alma(close, length=11):
     """
-    True RSI using ALMA smoothing instead of standard EMA.
-    Exact implementation matching TradingView Pine Script.
+    True RSI using ALMA smoothing (HILEGA-ALMA version).
+    This version is more responsive but differs from standard RSI.
 
     Pine Script reference:
     delta = src - src[1]
     up := delta > 0 ? delta : 0
     down := delta < 0 ? -delta : 0
+    maUp = ta.alma(up, length)
+    maDown = ta.alma(down, length)
     """
     delta = close.diff()
 
@@ -767,6 +769,43 @@ def calculate_true_rsi(close, length=11):
     # Calculate RS and RSI (matching Pine Script: 100 - (100 / (1 + rs)))
     rs = ma_up / ma_down
     rs = rs.replace([np.inf], np.nan)
+    true_rsi = 100 - (100 / (1 + rs))
+
+    # Fill NaN values with 50 (neutral RSI)
+    true_rsi = true_rsi.fillna(50)
+
+    return true_rsi
+
+def calculate_true_rsi(close, length=11):
+    """
+    True RSI using RMA smoothing (HILEGA-ADAPTIVE version).
+    This matches TradingView's standard RSI calculation exactly.
+
+    Pine Script reference (Hilega-Adaptive.txt):
+    TrueRSI(src, length) =>
+        delta = src - src[1]
+        up := delta > 0 ? delta : 0
+        down := delta < 0 ? -delta : 0
+        maUp = ta.rma(up, length)
+        maDown = ta.rma(down, length)
+        rs = maUp / maDown
+        100 - (100 / (1 + rs))
+
+    RMA = Wilder's smoothing = EMA with alpha = 1/length
+    """
+    delta = close.diff()
+
+    # Separate gains and losses (matching Pine Script exactly)
+    gain = pd.Series(np.where(delta > 0, delta, 0), index=close.index)
+    loss = pd.Series(np.where(delta < 0, -delta, 0), index=close.index)
+
+    # Apply RMA smoothing (Wilder's smoothing method)
+    # RMA is equivalent to EMA with alpha = 1/length
+    avg_gain = gain.ewm(alpha=1/length, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/length, adjust=False).mean()
+
+    # Calculate RS and RSI (matching Pine Script: 100 - (100 / (1 + rs)))
+    rs = avg_gain / avg_loss.replace(0, np.nan)
     true_rsi = 100 - (100 / (1 + rs))
 
     # Fill NaN values with 50 (neutral RSI)
@@ -798,24 +837,226 @@ def calculate_tema_of_series(series, length=10):
     ema3 = ema2.ewm(span=length, adjust=False).mean()
     return 3 * ema1 - 3 * ema2 + ema3
 
-def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None):
+def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15min'):
     """
-    HILEGA-ALMA Scanner
+    HILEGA Adaptive HTF Cross Scanner
+    Detects RSI crossovers with VWMA using auto-adaptive parameters based on timeframe.
+
+    Based on "Hilega-Adaptive HTF.txt" Pine Script indicator.
+
+    Parameters:
+    - df: DataFrame with OHLCV data
+    - scanner_mode: 'cross_up' or 'cross_down'
+    - tf_input: Timeframe string (e.g., '1min', '15min', '1hr', '1 day')
+
+    Returns:
+    - signal: 'LONG' or 'SHORT' or None
+    - angle: Percentage difference between RSI and VWMA (as angle proxy)
+    - rsi_vwma_diff: Difference (RSI - VWMA)
+    - rsi: Current RSI value
+    - vwma: Current VWMA value
+    - alma: Current ALMA value
+    """
+    if len(df) < 100:
+        return None, None, None, None, None, None
+
+    # Don't drop the last row - we want to detect crossovers on both confirmed and forming candles
+    close = df['close']
+    volume = df['volume'] if 'volume' in df.columns else None
+
+    # =================================================================
+    # HIGHER TIMEFRAME ADAPTATION
+    # =================================================================
+    # Calculate current timeframe in minutes
+    tf_clean = tf_input.lower().strip()
+    if 'min' in tf_clean:
+        try:
+            tf_minutes = int(tf_clean.replace('min', ''))
+        except:
+            tf_minutes = 15
+    elif 'hr' in tf_clean:
+        try:
+            tf_minutes = int(tf_clean.replace('hr', '')) * 60
+        except:
+            tf_minutes = 60
+    elif 'day' in tf_clean:
+        try:
+            tf_minutes = int(tf_clean.replace(' day', '').replace('day', '')) * 1440
+        except:
+            tf_minutes = 1440
+    elif 'week' in tf_clean:
+        tf_minutes = 10080  # 7 days
+    elif 'month' in tf_clean:
+        tf_minutes = 43200  # 30 days
+    else:
+        tf_minutes = 15
+
+    # Determine higher timeframe (matching Pine Script logic)
+    if tf_minutes <= 20:
+        higher_tf_minutes = 60  # 1H
+    elif tf_minutes <= 30:
+        higher_tf_minutes = 1440  # 1D
+    elif tf_minutes <= 240:
+        higher_tf_minutes = 10080  # 1W
+    elif tf_minutes <= 2880:
+        higher_tf_minutes = 43200  # 1M
+    else:
+        higher_tf_minutes = 129600  # 3M
+
+    # Adaptation multiplier: Medium sensitivity = 1.0 (hardcoded as per requirement)
+    adapt_mult = 1.0
+
+    # Calculate adaptive lengths using logarithmic scaling (matching Pine Script)
+    rsi_len = int(np.clip(
+        np.round(9 + np.log10(higher_tf_minutes + 1) * 7 * adapt_mult),
+        7, 35
+    ))
+
+    vwma_len = int(np.clip(
+        np.round(16 + np.log10(higher_tf_minutes + 1) * 9 * adapt_mult),
+        14, 50
+    ))
+
+    alma_len = int(np.clip(
+        np.round(8 + np.log10(higher_tf_minutes + 1) * 6 * adapt_mult),
+        6, 100
+    ))
+
+    logging.info(f"  Adaptive HTF Cross | TF={tf_input} ({tf_minutes}min) → HTF={higher_tf_minutes}min | RSI={rsi_len} | VWMA={vwma_len} | ALMA={alma_len}")
+
+    # =================================================================
+    # PRE-COMPUTE RSI VALUES (24 lengths from the script)
+    # =================================================================
+    rsi_lengths = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 26, 28, 30, 35]
+    rsis = {}
+    for length in rsi_lengths:
+        rsis[length] = calculate_true_rsi(close, length=length)
+
+    # SELECT RSI based on rsi_len (matching Pine Script getRSI function)
+    rsi_conditions = [rsi_len <= length for length in rsi_lengths]
+    rsi_values = [rsis[length] for length in rsi_lengths]
+    true_rsi = np.select(rsi_conditions, rsi_values, default=rsis[35])
+    true_rsi = pd.Series(true_rsi, index=close.index)
+
+    # =================================================================
+    # VWMA AND ALMA CALCULATIONS
+    # =================================================================
+    vwma_rsi = calculate_vwma(true_rsi, volume, length=vwma_len)
+
+    # ALMA with fixed parameters (offset=0.85, sigma=6.0 as per script)
+    alma_rsi = calculate_alma(true_rsi, length=alma_len, offset=0.85, sigma=6.0)
+
+    # =================================================================
+    # CROSSOVER DETECTION
+    # =================================================================
+    # Check BOTH confirmed candle (index -2) and forming candle (index -1)
+    # crossover: rsi[i] > vwma[i] AND rsi[i-1] <= vwma[i-1]
+    # crossunder: rsi[i] < vwma[i] AND rsi[i-1] >= vwma[i-1]
+
+    if len(true_rsi) < 3 or len(vwma_rsi) < 3:
+        return None, None, None, None, None, None, None
+
+    # Get values for forming candle (index -1)
+    forming_rsi = true_rsi.iloc[-1]
+    forming_vwma = vwma_rsi.iloc[-1]
+    forming_alma = alma_rsi.iloc[-1]
+
+    # Get values for confirmed candle (index -2)
+    confirmed_rsi = true_rsi.iloc[-2]
+    confirmed_vwma = vwma_rsi.iloc[-2]
+    confirmed_alma = alma_rsi.iloc[-2]
+
+    # Get previous values for crossover detection
+    prev_confirmed_rsi = true_rsi.iloc[-3]
+    prev_confirmed_vwma = vwma_rsi.iloc[-3]
+    prev_forming_rsi = true_rsi.iloc[-2]
+    prev_forming_vwma = vwma_rsi.iloc[-2]
+
+    # Detect crossover on CONFIRMED candle (previous closed candle)
+    confirmed_cross_up = (confirmed_rsi > confirmed_vwma) and (prev_confirmed_rsi <= prev_confirmed_vwma)
+    confirmed_cross_down = (confirmed_rsi < confirmed_vwma) and (prev_confirmed_rsi >= prev_confirmed_vwma)
+
+    # Detect crossover on FORMING candle (current candle)
+    forming_cross_up = (forming_rsi > forming_vwma) and (prev_forming_rsi <= prev_forming_vwma)
+    forming_cross_down = (forming_rsi < forming_vwma) and (prev_forming_rsi >= prev_forming_vwma)
+
+    signal = None
+    candle_status = None
+    use_rsi = None
+    use_vwma = None
+    use_alma = None
+
+    # Priority: Confirmed candle first, then forming candle
+    if scanner_mode == 'cross_up':
+        if confirmed_cross_up and not pd.isna(confirmed_rsi) and not pd.isna(confirmed_vwma):
+            signal = 'LONG'
+            candle_status = 'Confirmed'
+            use_rsi = confirmed_rsi
+            use_vwma = confirmed_vwma
+            use_alma = confirmed_alma
+        elif forming_cross_up and not pd.isna(forming_rsi) and not pd.isna(forming_vwma):
+            signal = 'LONG'
+            candle_status = 'Forming'
+            use_rsi = forming_rsi
+            use_vwma = forming_vwma
+            use_alma = forming_alma
+    elif scanner_mode == 'cross_down':
+        if confirmed_cross_down and not pd.isna(confirmed_rsi) and not pd.isna(confirmed_vwma):
+            signal = 'SHORT'
+            candle_status = 'Confirmed'
+            use_rsi = confirmed_rsi
+            use_vwma = confirmed_vwma
+            use_alma = confirmed_alma
+        elif forming_cross_down and not pd.isna(forming_rsi) and not pd.isna(forming_vwma):
+            signal = 'SHORT'
+            candle_status = 'Forming'
+            use_rsi = forming_rsi
+            use_vwma = forming_vwma
+            use_alma = forming_alma
+
+    if not signal:
+        return None, None, None, None, None, None, None
+
+    # =================================================================
+    # CALCULATE ANGLE (as percentage difference)
+    # =================================================================
+    # Angle = ((RSI - VWMA) / VWMA) * 100
+    if use_vwma != 0:
+        angle = ((use_rsi - use_vwma) / use_vwma) * 100
+    else:
+        angle = 0.0
+
+    # RSI-VWMA difference
+    rsi_vwma_diff = use_rsi - use_vwma
+
+    logging.info(f"  >>> Adaptive HTF Cross {signal} signal ({candle_status}) | RSI={use_rsi:.2f} VWMA={use_vwma:.2f} ALMA={use_alma:.2f} | Angle={angle:.2f}%")
+
+    return signal, angle, rsi_vwma_diff, use_rsi, use_vwma, use_alma, candle_status
+
+def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None, tf_input='15min',
+                         rsi_mode='ALMA Fixed', fixed_rsi_length=11, fixed_vwma_length=21, fixed_tema_length=10):
+    """
+    HILEGA Scanner with Multiple RSI Calculation Modes
 
     Parameters:
     - df: DataFrame with OHLCV data
     - scanner_mode: 'buy' or 'sell'
     - rsi_threshold: Custom RSI threshold value (default: 10 for buy, 90 for sell)
+    - tf_input: Timeframe string (e.g., '15min', '1hr', '1 day') for adaptive length calculation
+    - rsi_mode: 'ALMA Fixed', 'ALMA', or 'RMA'
+    - fixed_rsi_length: RSI length for ALMA Fixed mode (default: 11)
+    - fixed_vwma_length: VWMA length for ALMA Fixed mode (default: 21)
+    - fixed_tema_length: TEMA length for ALMA Fixed mode (default: 10)
 
     Returns:
     - signal: 'LONG' or 'SHORT' or None
     - angle: Angle between True RSI and TEMA
     - rsi_tema_gap: Gap between True RSI and TEMA (True RSI - TEMA)
     - true_rsi: Current True RSI value
-    - daily_change: Not calculated here (passed from caller)
+    - vwma_rsx: Current VWMA value
     """
     if len(df) < 100:
-        return None, None, None, None
+        return None, None, None, None, None
 
     # IMPORTANT: For HILEGA scanner, we need to show the FORMING candle RSI
     # This matches TradingView's behavior where the indicator shows real-time
@@ -828,19 +1069,108 @@ def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None):
     # including the forming candle.
 
     if len(df) < 100:
-        return None, None, None, None
+        return None, None, None, None, None
 
     close = df['close']
     volume = df['volume'] if 'volume' in df.columns else None
 
-    # Calculate True RSI (ALMA-based RSI)
-    true_rsi = calculate_true_rsi(close, length=11)
+    # =================================================================
+    # ADAPTIVE LENGTH CALCULATION BASED ON TIMEFRAME
+    # =================================================================
+    # Calculate timeframe in minutes
+    tf_clean = tf_input.lower().strip()
+    if 'min' in tf_clean:
+        try:
+            tf_minutes = int(tf_clean.replace('min', ''))
+        except:
+            tf_minutes = 15
+    elif 'hr' in tf_clean:
+        try:
+            tf_minutes = int(tf_clean.replace('hr', '')) * 60
+        except:
+            tf_minutes = 60
+    elif 'day' in tf_clean:
+        try:
+            tf_minutes = int(tf_clean.replace(' day', '').replace('day', '')) * 1440
+        except:
+            tf_minutes = 1440
+    elif 'week' in tf_clean:
+        tf_minutes = 10080  # 7 days
+    elif 'month' in tf_clean:
+        tf_minutes = 43200  # 30 days
+    else:
+        tf_minutes = 15  # default to 15min
 
-    # Calculate VWMA of True RSI (using volume weighting)
-    vwma_rsi = calculate_vwma(true_rsi, volume, length=21)
+    # Adaptation sensitivity: Medium (1.0), High (1.4), Low (0.7)
+    adapt_mult = 1.0  # Medium sensitivity
 
-    # Calculate TEMA of True RSI
-    tema_rsi = calculate_tema_of_series(true_rsi, length=10)
+    # Auto-calculate adaptive lengths using logarithmic scaling
+    # Formula calibrated for crypto scalping (matching TradingView script)
+    auto_rsi_length = int(np.clip(
+        np.round(5 + np.log10(tf_minutes + 1) * 6 * adapt_mult),
+        5, 35
+    ))
+
+    auto_vwma_period = int(np.clip(
+        np.round(10 + np.log10(tf_minutes + 1) * 8 * adapt_mult),
+        10, 50
+    ))
+
+    auto_tema_length = int(np.clip(
+        np.round(4 + np.log10(tf_minutes + 1) * 5 * adapt_mult),
+        3, 100
+    ))
+
+    # =================================================================
+    # RSI CALCULATION BASED ON MODE
+    # =================================================================
+    if rsi_mode == 'ALMA Fixed':
+        # ALMA Fixed: Use ALMA smoothing with user-defined fixed lengths
+        logging.info(f"  HILEGA ALMA Fixed | TF={tf_input} | RSI={fixed_rsi_length} | VWMA={fixed_vwma_length} | TEMA={fixed_tema_length}")
+        true_rsi = calculate_true_rsi_alma(close, length=fixed_rsi_length)
+        vwma_rsi = calculate_vwma(true_rsi, volume, length=fixed_vwma_length)
+        tema_rsi = calculate_tema_of_series(true_rsi, length=fixed_tema_length)
+
+    elif rsi_mode == 'ALMA':
+        # ALMA (Adaptive): Use ALMA smoothing with timeframe-adaptive lengths
+        logging.info(f"  HILEGA ALMA Adaptive | TF={tf_input} ({tf_minutes}min) | RSI={auto_rsi_length} | VWMA={auto_vwma_period} | TEMA={auto_tema_length}")
+        rsi_lengths = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 26, 28, 30, 35]
+        rsis = {}
+        for length in rsi_lengths:
+            rsis[length] = calculate_true_rsi_alma(close, length=length)
+
+        # SELECT RSI based on auto_rsi_length using np.select
+        rsi_conditions = [auto_rsi_length <= length for length in rsi_lengths]
+        rsi_values = [rsis[length] for length in rsi_lengths]
+        true_rsi = np.select(rsi_conditions, rsi_values, default=rsis[35])
+        true_rsi = pd.Series(true_rsi, index=close.index)
+
+        vwma_rsi = calculate_vwma(true_rsi, volume, length=auto_vwma_period)
+        tema_rsi = calculate_tema_of_series(true_rsi, length=auto_tema_length)
+
+    elif rsi_mode == 'RMA':
+        # RMA (Adaptive): Use RMA smoothing with timeframe-adaptive lengths
+        logging.info(f"  HILEGA RMA Adaptive | TF={tf_input} ({tf_minutes}min) | RSI={auto_rsi_length} | VWMA={auto_vwma_period} | TEMA={auto_tema_length}")
+        rsi_lengths = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 26, 28, 30, 35]
+        rsis = {}
+        for length in rsi_lengths:
+            rsis[length] = calculate_true_rsi(close, length=length)
+
+        # SELECT RSI based on auto_rsi_length using np.select
+        rsi_conditions = [auto_rsi_length <= length for length in rsi_lengths]
+        rsi_values = [rsis[length] for length in rsi_lengths]
+        true_rsi = np.select(rsi_conditions, rsi_values, default=rsis[35])
+        true_rsi = pd.Series(true_rsi, index=close.index)
+
+        vwma_rsi = calculate_vwma(true_rsi, volume, length=auto_vwma_period)
+        tema_rsi = calculate_tema_of_series(true_rsi, length=auto_tema_length)
+
+    else:
+        # Default to ALMA Fixed if unknown mode
+        logging.warning(f"Unknown RSI mode '{rsi_mode}', defaulting to ALMA Fixed")
+        true_rsi = calculate_true_rsi_alma(close, length=fixed_rsi_length)
+        vwma_rsi = calculate_vwma(true_rsi, volume, length=fixed_vwma_length)
+        tema_rsi = calculate_tema_of_series(true_rsi, length=fixed_tema_length)
 
     # Get the last value (latest candle - includes forming candle for real-time values)
     current_true_rsi = true_rsi.iloc[-1]
@@ -869,7 +1199,7 @@ def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None):
         if current_true_rsi >= threshold:
             signal = 'SHORT'
 
-    return signal, angle, rsi_tema_gap, current_true_rsi
+    return signal, angle, rsi_tema_gap, current_true_rsi, current_vwma
 
 def apply_qwen_scanner(df, tf_input="1 day", use_current_candle=False, **kwargs):
     """
@@ -1093,6 +1423,10 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     scanner_type = kwargs.get('scanner_type', 'ama_pro')
     hilega_buy_rsi = kwargs.get('hilega_buy_rsi', 10)
     hilega_sell_rsi = kwargs.get('hilega_sell_rsi', 90)
+    hilega_rsi_mode = kwargs.get('hilega_rsi_mode', 'ALMA Fixed')
+    alma_fixed_rsi_length = kwargs.get('alma_fixed_rsi_length', 11)
+    alma_fixed_vwma_length = kwargs.get('alma_fixed_vwma_length', 21)
+    alma_fixed_tema_length = kwargs.get('alma_fixed_tema_length', 10)
 
     # Support for multiple scanner types (list) or single scanner type (string)
     if isinstance(scanner_type, list):
@@ -1103,6 +1437,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_qwen_now = 'qwen_now' in scanner_type or 'both_now' in scanner_type or 'all' in scanner_type
         run_hilega_buy = 'hilega_buy' in scanner_type
         run_hilega_sell = 'hilega_sell' in scanner_type
+        run_cross_up = 'rsi_cross_up_vwma' in scanner_type
+        run_cross_down = 'rsi_cross_dn_vwma' in scanner_type
     else:
         # Single scanner type (original logic)
         run_ama = scanner_type in ('ama_pro', 'both', 'all')
@@ -1111,6 +1447,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_qwen_now = scanner_type in ('qwen_now', 'both_now', 'all')
         run_hilega_buy = scanner_type == 'hilega_buy'
         run_hilega_sell = scanner_type == 'hilega_sell'
+        run_cross_up = scanner_type == 'rsi_cross_up_vwma'
+        run_cross_down = scanner_type == 'rsi_cross_dn_vwma'
 
     async with semaphore:
         for tf in timeframes:
@@ -1254,9 +1592,18 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 if run_hilega_buy or run_hilega_sell:
                     # HILEGA BUY scanner
                     if run_hilega_buy and len(df) >= 100:
-                        signal, angle, rsi_tema_gap, true_rsi = await loop.run_in_executor(
+                        signal, angle, rsi_tema_gap, true_rsi, vwma_rsx = await loop.run_in_executor(
                             executor,
-                            lambda: apply_hilega_scanner(df.copy(), scanner_mode='buy', rsi_threshold=hilega_buy_rsi)
+                            lambda tf=tf: apply_hilega_scanner(
+                                df.copy(),
+                                scanner_mode='buy',
+                                rsi_threshold=hilega_buy_rsi,
+                                tf_input=tf,
+                                rsi_mode=hilega_rsi_mode,
+                                fixed_rsi_length=alma_fixed_rsi_length,
+                                fixed_vwma_length=alma_fixed_vwma_length,
+                                fixed_tema_length=alma_fixed_tema_length
+                            )
                         )
                         if signal:
                             results_list.append({
@@ -1266,6 +1613,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                 'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
                                 'RSI-TEMA': f"{rsi_tema_gap:+.2f}" if rsi_tema_gap is not None else "N/A",
                                 'RSI': f"{true_rsi:.2f}" if true_rsi is not None else "N/A",
+                                'VWMA': f"{vwma_rsx:.2f}" if vwma_rsx is not None else "N/A",
                                 'Daily Change': daily_change,
                                 'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 'Scanner': 'HILEGA BUY'
@@ -1273,9 +1621,18 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
 
                     # HILEGA SELL scanner
                     if run_hilega_sell and len(df) >= 100:
-                        signal, angle, rsi_tema_gap, true_rsi = await loop.run_in_executor(
+                        signal, angle, rsi_tema_gap, true_rsi, vwma_rsx = await loop.run_in_executor(
                             executor,
-                            lambda: apply_hilega_scanner(df.copy(), scanner_mode='sell', rsi_threshold=hilega_sell_rsi)
+                            lambda tf=tf: apply_hilega_scanner(
+                                df.copy(),
+                                scanner_mode='sell',
+                                rsi_threshold=hilega_sell_rsi,
+                                tf_input=tf,
+                                rsi_mode=hilega_rsi_mode,
+                                fixed_rsi_length=alma_fixed_rsi_length,
+                                fixed_vwma_length=alma_fixed_vwma_length,
+                                fixed_tema_length=alma_fixed_tema_length
+                            )
                         )
                         if signal:
                             results_list.append({
@@ -1285,9 +1642,67 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                 'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
                                 'RSI-TEMA': f"{rsi_tema_gap:+.2f}" if rsi_tema_gap is not None else "N/A",
                                 'RSI': f"{true_rsi:.2f}" if true_rsi is not None else "N/A",
+                                'VWMA': f"{vwma_rsx:.2f}" if vwma_rsx is not None else "N/A",
                                 'Daily Change': daily_change,
                                 'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 'Scanner': 'HILEGA SELL'
+                            })
+
+                # ── ADAPTIVE HTF CROSS SCANNER LOGIC ──
+                # Cross scanner uses a different result structure and is mutually exclusive with AMA/HILEGA
+                if run_cross_up or run_cross_down:
+                    # RSI Cross UP VWMA scanner
+                    if run_cross_up and len(df) >= 100:
+                        signal, angle, rsi_vwma_diff, rsi_val, vwma_val, alma_val, candle_status = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf: apply_adaptive_htf_cross_scanner(
+                                df.copy(),
+                                scanner_mode='cross_up',
+                                tf_input=tf
+                            )
+                        )
+                        if signal:
+                            signal_type = "Cross UP"
+                            results_list.append({
+                                'Crypto Name': symbol,
+                                'Timeperiod': tf,
+                                'Signal Type': signal_type,
+                                'Candle Status': candle_status or 'N/A',
+                                'Angle': f"{angle:.2f}%" if angle is not None else "N/A",
+                                'RSI-VWMA': f"{rsi_vwma_diff:+.2f}" if rsi_vwma_diff is not None else "N/A",
+                                'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
+                                'VWMA': f"{vwma_val:.2f}" if vwma_val is not None else "N/A",
+                                'ALMA': f"{alma_val:.2f}" if alma_val is not None else "N/A",
+                                'Daily Change': daily_change,
+                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                'Scanner': 'RSI CROSS UP VWMA'
+                            })
+
+                    # RSI Cross DN VWMA scanner
+                    if run_cross_down and len(df) >= 100:
+                        signal, angle, rsi_vwma_diff, rsi_val, vwma_val, alma_val, candle_status = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf: apply_adaptive_htf_cross_scanner(
+                                df.copy(),
+                                scanner_mode='cross_down',
+                                tf_input=tf
+                            )
+                        )
+                        if signal:
+                            signal_type = "Cross DN"
+                            results_list.append({
+                                'Crypto Name': symbol,
+                                'Timeperiod': tf,
+                                'Signal Type': signal_type,
+                                'Candle Status': candle_status or 'N/A',
+                                'Angle': f"{angle:.2f}%" if angle is not None else "N/A",
+                                'RSI-VWMA': f"{rsi_vwma_diff:+.2f}" if rsi_vwma_diff is not None else "N/A",
+                                'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
+                                'VWMA': f"{vwma_val:.2f}" if vwma_val is not None else "N/A",
+                                'ALMA': f"{alma_val:.2f}" if alma_val is not None else "N/A",
+                                'Daily Change': daily_change,
+                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                'Scanner': 'RSI CROSS DN VWMA'
                             })
 
             except Exception as e:

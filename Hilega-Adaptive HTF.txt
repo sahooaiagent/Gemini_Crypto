@@ -1,0 +1,229 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © sahooss
+
+//@version=6
+indicator("HILEGA Adaptive HTF", overlay = false, max_bars_back = 500, scale = scale.right)
+
+// ────────────────────────────────────────────────
+//  TRUE RSI FOR RENKO
+// ────────────────────────────────────────────────
+TrueRSI(src, length) =>
+    up   = src - src[1] > 0 ? src - src[1] : 0.0
+    down = src - src[1] < 0 ? -(src - src[1]) : 0.0
+    maUp   = ta.rma(up, length)
+    maDown = ta.rma(down, length)
+    100 - (100 / (1 + maUp / maDown))
+
+// ────────────────────────────────────────────────
+//  INPUTS
+// ────────────────────────────────────────────────
+var string adaptGroup   = "🎯 Higher Timeframe Adaptation"
+bool   i_autoAdapt       = input.bool(true,  "Auto-Adapt to Higher Timeframe", group = adaptGroup)
+string i_adaptSensitivity = input.string("Medium", "Adaptation Sensitivity", options = ["Low", "Medium", "High"], group = adaptGroup)
+
+var string manualGroup = "⚙️ Manual Override (if Auto-Adapt OFF)"
+int lenRSI   = input.int(9,  "RSI Length",   minval = 5,  maxval = 35,  group = manualGroup)
+int lenVWMA  = input.int(21, "VWMA Period",  minval = 10, maxval = 50,  group = manualGroup)
+int alma_len = input.int(10, "ALMA Length",  minval = 3,  maxval = 100, group = manualGroup)
+
+// ────────────────────────────────────────────────
+//  PRE-COMPUTED RSI VALUES
+// ────────────────────────────────────────────────
+rsi_5  = TrueRSI(close, 5)
+rsi_6  = TrueRSI(close, 6)
+rsi_7  = TrueRSI(close, 7)
+rsi_8  = TrueRSI(close, 8)
+rsi_9  = TrueRSI(close, 9)
+rsi_10 = TrueRSI(close, 10)
+rsi_11 = TrueRSI(close, 11)
+rsi_12 = TrueRSI(close, 12)
+rsi_13 = TrueRSI(close, 13)
+rsi_14 = TrueRSI(close, 14)
+rsi_15 = TrueRSI(close, 15)
+rsi_16 = TrueRSI(close, 16)
+rsi_17 = TrueRSI(close, 17)
+rsi_18 = TrueRSI(close, 18)
+rsi_19 = TrueRSI(close, 19)
+rsi_20 = TrueRSI(close, 20)
+rsi_22 = TrueRSI(close, 22)
+rsi_24 = TrueRSI(close, 24)
+rsi_26 = TrueRSI(close, 26)
+rsi_28 = TrueRSI(close, 28)
+rsi_30 = TrueRSI(close, 30)
+rsi_35 = TrueRSI(close, 35)
+
+// ────────────────────────────────────────────────
+//  HIGHER TIMEFRAME ADAPTATION
+// ────────────────────────────────────────────────
+int tfMinutes = timeframe.in_seconds() / 60
+
+getHigherTF() =>
+    if not i_autoAdapt
+        tfMinutes
+    else if tfMinutes <= 20
+        60
+    else if tfMinutes <= 30
+        1440
+    else if tfMinutes <= 240
+        10080
+    else if tfMinutes <= 2880
+        43200
+    else
+        129600
+
+int higherTFMinutes = getHigherTF()
+
+// Adaptation multiplier using switch (v5/v6 friendly)
+float adaptMult = switch i_adaptSensitivity
+    "High"   => 1.2
+    "Medium" => 1.0
+    => 0.8
+
+// Adaptive lengths — forced to int
+int rsi_len = i_autoAdapt ?
+     math.max(7,   math.min(35,  math.round(9  + math.log10(higherTFMinutes + 1) * 7  * adaptMult))) :
+     lenRSI
+
+int vwma_len = i_autoAdapt ?
+     math.max(14,  math.min(50,  math.round(16 + math.log10(higherTFMinutes + 1) * 9  * adaptMult))) :
+     lenVWMA
+
+int alma_len_final = i_autoAdapt ?
+     math.max(6,   math.min(100, math.round(8  + math.log10(higherTFMinutes + 1) * 6  * adaptMult))) :
+     alma_len
+
+// ALMA fixed params
+float almaOffset = 0.85
+float almaSigma  = 6.0
+
+// ────────────────────────────────────────────────
+//  RSI SELECTOR
+// ────────────────────────────────────────────────
+getRSI(int len) =>
+    switch
+        len <= 5  => rsi_5
+        len <= 6  => rsi_6
+        len <= 7  => rsi_7
+        len <= 8  => rsi_8
+        len <= 9  => rsi_9
+        len <= 10 => rsi_10
+        len <= 11 => rsi_11
+        len <= 12 => rsi_12
+        len <= 13 => rsi_13
+        len <= 14 => rsi_14
+        len <= 15 => rsi_15
+        len <= 16 => rsi_16
+        len <= 17 => rsi_17
+        len <= 18 => rsi_18
+        len <= 19 => rsi_19
+        len <= 20 => rsi_20
+        len <= 22 => rsi_22
+        len <= 24 => rsi_24
+        len <= 26 => rsi_26
+        len <= 28 => rsi_28
+        len <= 30 => rsi_30
+        => rsi_35
+
+float rsx = getRSI(rsi_len)
+
+// ────────────────────────────────────────────────
+//  CALCULATIONS
+// ────────────────────────────────────────────────
+float vwmaRSX = ta.vwma(rsx, vwma_len)
+float alma    = ta.alma(rsx, alma_len_final, almaOffset, almaSigma)
+
+// ────────────────────────────────────────────────
+//  PLOTS
+// ────────────────────────────────────────────────
+plot(rsx,      "True RSI",        color = #00FF00, linewidth = 3)
+plot(vwmaRSX,  "VWMA",            color = #ff0000, linewidth = 3)
+plot(alma,     "ALMA (Adaptive)", color = #1e00ff, linewidth = 3)
+
+hline(90, "Overbought", color = #FF00FF, linestyle = hline.style_dashed)
+hline(10, "Oversold",   color = #0066FF, linestyle = hline.style_dashed)
+hline(50, "Midline",    color = color.gray)
+
+fill(plot(rsx), plot(vwmaRSX), color = rsx > vwmaRSX ? color.new(#09ff00, 72) : color.new(#ff0000, 68))
+
+// ────────────────────────────────────────────────
+//  DIVERGENCE DETECTION
+// ────────────────────────────────────────────────
+int leftBars  = 5
+int rightBars = 5
+
+float lowPivot  = ta.pivotlow(rsx, leftBars, rightBars)
+float highPivot = ta.pivothigh(rsx, leftBars, rightBars)
+
+bool lowPivotFound  = not na(lowPivot)
+bool highPivotFound = not na(highPivot)
+
+bool bullDiv       = lowPivotFound  and low < low[rightBars * 2]   and rsx > rsx[rightBars * 2]
+bool hiddenBullDiv = lowPivotFound  and low > low[rightBars * 2]   and rsx < rsx[rightBars * 2]
+bool bearDiv       = highPivotFound and high > high[rightBars * 2] and rsx < rsx[rightBars * 2]
+bool hiddenBearDiv = highPivotFound and high < high[rightBars * 2] and rsx > rsx[rightBars * 2]
+
+// ────────────────────────────────────────────────
+//  BB SQUEEZE
+// ────────────────────────────────────────────────
+float bbw_val = ta.bbw(close, 20, 2.0)
+bool  squeeze = bbw_val == ta.lowest(bbw_val, 125)
+bgcolor(squeeze ? color.new(#AA00FF, 90) : na, title = "Squeeze")
+
+// ────────────────────────────────────────────────
+//  INFO TABLE
+// ────────────────────────────────────────────────
+var table infoTable = table.new(position.top_right, columns = 2, rows = 10, bgcolor = color.new(color.black, 85))
+
+if barstate.islastconfirmedhistory or barstate.isrealtime
+    table.cell(infoTable, 0, 0, "Parameter",     text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 0, "Value",         text_color = color.white, text_size = size.tiny)
+    
+    table.cell(infoTable, 0, 1, "Current TF",    text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 1, timeframe.period, text_color = color.yellow, text_size = size.tiny)
+    
+    string htfDisplay = switch
+        higherTFMinutes >= 129600 => "3 Months"
+        higherTFMinutes >=  43200 => "1 Month"
+        higherTFMinutes >=  10080 => "1 Week"
+        higherTFMinutes >=   1440 => "1 Day"
+        higherTFMinutes >=     60 => "1 Hour"
+        => "Current"
+    
+    table.cell(infoTable, 0, 2, "Using HTF",     text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 2, htfDisplay,      text_color = color.lime, text_size = size.tiny)
+    
+    string adaptStatus = i_autoAdapt ? "ON" : "OFF"
+    color  adaptColor  = i_autoAdapt ? color.green : color.red
+    table.cell(infoTable, 0, 3, "Auto-Adapt",    text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 3, adaptStatus,     text_color = adaptColor, text_size = size.tiny)
+    
+    table.cell(infoTable, 0, 4, "RSI Length",    text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 4, str.tostring(rsi_len),   text_color = color.aqua, text_size = size.tiny)
+    
+    table.cell(infoTable, 0, 5, "VWMA Period",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 5, str.tostring(vwma_len),  text_color = color.aqua, text_size = size.tiny)
+    
+    table.cell(infoTable, 0, 6, "ALMA Length",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 6, str.tostring(alma_len_final), text_color = color.purple, text_size = size.tiny)
+    
+    table.cell(infoTable, 0, 7, "Sensitivity",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 7, i_adaptSensitivity, text_color = color.orange, text_size = size.tiny)
+    
+    table.cell(infoTable, 0, 8, "HTF Minutes",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 8, str.tostring(higherTFMinutes), text_color = color.purple, text_size = size.tiny)
+    
+    table.cell(infoTable, 0, 9, "ALMA Sigma",    text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 9, str.tostring(almaSigma), text_color = color.purple, text_size = size.tiny)
+
+// ────────────────────────────────────────────────
+//  ALERTS
+// ────────────────────────────────────────────────
+alertcondition(bullDiv,       title = "Bullish Divergence",       message = "HILEGA: Bullish Divergence")
+alertcondition(bearDiv,       title = "Bearish Divergence",       message = "HILEGA: Bearish Divergence")
+alertcondition(hiddenBullDiv, title = "Hidden Bullish Div",       message = "HILEGA: Hidden Bullish")
+alertcondition(hiddenBearDiv, title = "Hidden Bearish Div",       message = "HILEGA: Hidden Bearish")
+alertcondition(squeeze,       title = "BB Squeeze",               message = "HILEGA: Bollinger Band Squeeze")
+alertcondition(rsx > vwmaRSX, title = "RSI > VWMA",               message = "HILEGA: Bullish Momentum")
+alertcondition(rsx < vwmaRSX, title = "RSI < VWMA",               message = "HILEGA: Bearish Momentum")
+alertcondition(ta.crossover(rsx, alma),  title = "RSI Cross ALMA Bull",  message = "HILEGA: RSI Cross Above ALMA")
+alertcondition(ta.crossunder(rsx, alma), title = "RSI Cross ALMA Bear",  message = "HILEGA: RSI Cross Below ALMA")

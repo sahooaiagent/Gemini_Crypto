@@ -5,10 +5,12 @@
 const API_URL = 'http://localhost:8001';
 let allResults = [];
 let allHilegaResults = [];
+let allCrossResults = [];
 let scanRunning = false;
 let logPollInterval = null;
 let currentSort = { col: null, asc: true };
 let currentHilegaSort = { col: null, asc: true };
+let currentCrossSort = { col: null, asc: true };
 
 // ── DOM REFS ──
 const $ = (sel) => document.querySelector(sel);
@@ -149,13 +151,16 @@ async function fetchResults() {
         const data = await res.json();
         allResults = data.results || [];
         allHilegaResults = data.hilega_results || [];
+        allCrossResults = data.cross_results || [];
         if (data.scan_time) {
             updateLastScanTime(data.scan_time);
         }
         populateTfFilter();
         populateHilegaTfFilter();
+        populateCrossTfFilter();
         renderResults();
         renderHilegaResults();
+        renderCrossResults();
         updateStats();
     } catch (e) {
         // API may not have /api/results yet
@@ -297,7 +302,7 @@ function renderHilegaResults() {
 
     // Sort
     if (currentHilegaSort.col) {
-        const numericCols = ['Angle', 'RSI-TEMA', 'RSI', 'Daily Change'];
+        const numericCols = ['Angle', 'RSI-TEMA', 'RSI', 'VWMA', 'Daily Change'];
         const isNumeric = numericCols.includes(currentHilegaSort.col);
         filtered.sort((a, b) => {
             let va = a[currentHilegaSort.col] || '';
@@ -337,6 +342,7 @@ function renderHilegaResults() {
         const angleStr = r.Angle || '—';
         const rsiTemaStr = r['RSI-TEMA'] || '—';
         const rsiStr = r.RSI || '—';
+        const vwmaStr = r.VWMA || '—';
 
         return `
             <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
@@ -351,6 +357,7 @@ function renderHilegaResults() {
                 <td class="mono">${angleStr}</td>
                 <td class="mono">${rsiTemaStr}</td>
                 <td class="mono">${rsiStr}</td>
+                <td class="mono">${vwmaStr}</td>
                 <td class="${changeCls}">${changeStr}</td>
                 <td class="mono">${r.Timestamp || '—'}</td>
             </tr>
@@ -363,6 +370,103 @@ function populateHilegaTfFilter() {
     const currentVal = select.value;
     const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
     const tfs = [...new Set(allHilegaResults.map(r => r.Timeperiod))];
+    select.innerHTML = '<option value="all">All Timeframes</option>' +
+        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
+    select.value = tfs.includes(currentVal) ? currentVal : 'all';
+}
+
+function renderCrossResults() {
+    const body = $('#crossSignalsBody');
+    const empty = $('#crossEmptyState');
+    const countEl = $('#crossResultCount');
+    const searchVal = ($('#crossSearchInput').value || '').toLowerCase();
+    const signalFilter = $('#crossSignalFilterChips .chip.active')?.dataset?.filter || 'all';
+    const tfFilter = $('#crossTfFilter').value;
+
+    let filtered = allCrossResults.filter(r => {
+        if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
+        if (signalFilter !== 'all' && r['Signal Type'] !== signalFilter) return false;
+        if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
+        return true;
+    });
+
+    // Sort
+    if (currentCrossSort.col) {
+        const numericCols = ['Angle', 'RSI-VWMA', 'RSI', 'VWMA', 'ALMA', 'Daily Change'];
+        const isNumeric = numericCols.includes(currentCrossSort.col);
+        filtered.sort((a, b) => {
+            let va = a[currentCrossSort.col] || '';
+            let vb = b[currentCrossSort.col] || '';
+            if (isNumeric) {
+                va = parseFloat(String(va).replace(/[°%,]/g, '')) || 0;
+                vb = parseFloat(String(vb).replace(/[°%,]/g, '')) || 0;
+            } else {
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+            }
+            if (va < vb) return currentCrossSort.asc ? -1 : 1;
+            if (va > vb) return currentCrossSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+
+    if (filtered.length === 0) {
+        body.innerHTML = '';
+        empty.style.display = 'block';
+        countEl.textContent = '0 results';
+        return;
+    }
+
+    empty.style.display = 'none';
+    countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
+
+    body.innerHTML = filtered.map((r, i) => {
+        const signalType = r['Signal Type'] || '—';
+        const sigCls = signalType === 'Cross UP' ? 'long' : 'short';
+        const sigIcon = signalType === 'Cross UP' ? 'fa-arrow-up' : 'fa-arrow-down';
+        const changeStr = r['Daily Change'] || '—';
+        const changeVal = parseFloat(changeStr);
+        const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
+        const name = r['Crypto Name'] || '—';
+        const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
+        const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
+        const candleStatus = r['Candle Status'] || '—';
+        const candleCls = candleStatus === 'Confirmed' ? 'change-positive' : candleStatus === 'Forming' ? 'change-negative' : '';
+        const candleBadge = candleStatus === 'Confirmed' ? '✓' : candleStatus === 'Forming' ? '◐' : '';
+        const angleStr = r.Angle || '—';
+        const rsiVwmaStr = r['RSI-VWMA'] || '—';
+        const rsiStr = r.RSI || '—';
+        const vwmaStr = r.VWMA || '—';
+        const almaStr = r.ALMA || '—';
+
+        return `
+            <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
+                <td><strong>${name}</strong></td>
+                <td><span class="tf-badge">${tfDisplay}</span></td>
+                <td>
+                    <span class="signal-badge ${sigCls}">
+                        <i class="fas ${sigIcon}"></i>
+                        ${signalType}
+                    </span>
+                </td>
+                <td class="${candleCls}"><strong>${candleBadge} ${candleStatus}</strong></td>
+                <td class="mono">${angleStr}</td>
+                <td class="mono">${rsiVwmaStr}</td>
+                <td class="mono">${rsiStr}</td>
+                <td class="mono">${vwmaStr}</td>
+                <td class="mono">${almaStr}</td>
+                <td class="${changeCls}">${changeStr}</td>
+                <td class="mono">${r.Timestamp || '—'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function populateCrossTfFilter() {
+    const select = $('#crossTfFilter');
+    const currentVal = select.value;
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
+    const tfs = [...new Set(allCrossResults.map(r => r.Timeperiod))];
     select.innerHTML = '<option value="all">All Timeframes</option>' +
         tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
     select.value = tfs.includes(currentVal) ? currentVal : 'all';
@@ -420,19 +524,32 @@ function initScannerControls() {
     });
 
     // Scanner type chip toggles (multi-select: can select multiple)
-    // HILEGA scanners are mutually exclusive with AMA/Qwen scanners
+    // HILEGA, Cross, and AMA/Qwen scanners are mutually exclusive
     $$('.scanner-chip').forEach(chip => {
         chip.addEventListener('click', () => {
             const scannerType = chip.dataset.scanner;
             const hilegaScanners = ['hilega_buy', 'hilega_sell'];
+            const crossScanners = ['rsi_cross_up_vwma', 'rsi_cross_dn_vwma'];
             const amaScanners = ['ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now', 'both_now', 'all'];
 
             // Check if clicking a HILEGA scanner
             if (hilegaScanners.includes(scannerType)) {
-                // If activating HILEGA, deactivate all AMA scanners
+                // If activating HILEGA, deactivate all AMA and Cross scanners
                 if (!chip.classList.contains('active')) {
                     $$('.scanner-chip').forEach(c => {
-                        if (amaScanners.includes(c.dataset.scanner)) {
+                        if (amaScanners.includes(c.dataset.scanner) || crossScanners.includes(c.dataset.scanner)) {
+                            c.classList.remove('active');
+                        }
+                    });
+                }
+                chip.classList.toggle('active');
+            }
+            // Check if clicking a Cross scanner
+            else if (crossScanners.includes(scannerType)) {
+                // If activating Cross, deactivate all AMA and HILEGA scanners
+                if (!chip.classList.contains('active')) {
+                    $$('.scanner-chip').forEach(c => {
+                        if (amaScanners.includes(c.dataset.scanner) || hilegaScanners.includes(c.dataset.scanner)) {
                             c.classList.remove('active');
                         }
                     });
@@ -441,10 +558,10 @@ function initScannerControls() {
             }
             // Check if clicking an AMA/Qwen scanner
             else if (amaScanners.includes(scannerType)) {
-                // If activating AMA, deactivate all HILEGA scanners
+                // If activating AMA, deactivate all HILEGA and Cross scanners
                 if (!chip.classList.contains('active')) {
                     $$('.scanner-chip').forEach(c => {
-                        if (hilegaScanners.includes(c.dataset.scanner)) {
+                        if (hilegaScanners.includes(c.dataset.scanner) || crossScanners.includes(c.dataset.scanner)) {
                             c.classList.remove('active');
                         }
                     });
@@ -458,6 +575,16 @@ function initScannerControls() {
     $$('.tf-chip').forEach(chip => {
         chip.addEventListener('click', () => chip.classList.toggle('active'));
     });
+
+    // HILEGA RSI Setup visibility and controls
+    updateHilegaRsiSetupVisibility();
+    $$('.scanner-chip').forEach(chip => {
+        chip.addEventListener('click', updateHilegaRsiSetupVisibility);
+    });
+
+    // HILEGA RSI Mode change handler
+    $('#hilegaRsiMode').addEventListener('change', updateAlmaFixedLengthsVisibility);
+    updateAlmaFixedLengthsVisibility();
 
     // Run scan button
     $('#runScanBtn').addEventListener('click', runScan);
@@ -487,6 +614,40 @@ function initScannerControls() {
     });
 }
 
+// ══════════════════════════════════════════════════════════════
+// HILEGA RSI SETUP VISIBILITY CONTROLS
+// ══════════════════════════════════════════════════════════════
+function updateHilegaRsiSetupVisibility() {
+    const hilegaScanners = ['hilega_buy', 'hilega_sell'];
+    const selectedScanners = Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
+    const hasHilega = selectedScanners.some(s => hilegaScanners.includes(s));
+
+    const setupSection = $('#hilegaRsiSetupSection');
+    if (hasHilega) {
+        setupSection.style.display = 'block';
+    } else {
+        setupSection.style.display = 'none';
+    }
+}
+
+function updateAlmaFixedLengthsVisibility() {
+    const rsiMode = $('#hilegaRsiMode').value;
+    const lengthsRow = $('#almaFixedLengthsRow');
+    const hint = $('#hilegaRsiModeHint');
+
+    if (rsiMode === 'ALMA Fixed') {
+        lengthsRow.style.display = 'flex';
+        hint.textContent = 'ALMA Fixed: Use ALMA smoothing with custom fixed lengths (defaults: RSI=11, VWMA=21, TEMA=10)';
+    } else {
+        lengthsRow.style.display = 'none';
+        if (rsiMode === 'ALMA') {
+            hint.textContent = 'ALMA (Adaptive): Use ALMA smoothing with timeframe-adaptive lengths';
+        } else if (rsiMode === 'RMA') {
+            hint.textContent = 'RMA (Adaptive): Use RMA smoothing with timeframe-adaptive lengths (matches standard RSI)';
+        }
+    }
+}
+
 async function runScan() {
     if (scanRunning) return;
 
@@ -498,6 +659,12 @@ async function runScan() {
     // Get HILEGA RSI thresholds
     const hilega_buy_rsi = parseInt($('#hilegaBuyRsi').value) || 10;
     const hilega_sell_rsi = parseInt($('#hilegaSellRsi').value) || 90;
+
+    // Get HILEGA RSI Mode and parameters
+    const hilega_rsi_mode = $('#hilegaRsiMode').value;
+    const alma_fixed_rsi_length = parseInt($('#almaFixedRsiLength').value) || 11;
+    const alma_fixed_vwma_length = parseInt($('#almaFixedVwmaLength').value) || 21;
+    const alma_fixed_tema_length = parseInt($('#almaFixedTemaLength').value) || 10;
 
     // Get all selected scanner types
     const selectedScanners = Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
@@ -539,8 +706,10 @@ async function runScan() {
     // Clear previous results
     allResults = [];
     allHilegaResults = [];
+    allCrossResults = [];
     renderResults();
     renderHilegaResults();
+    renderCrossResults();
     updateStats();
 
     // Add scan start log
@@ -572,7 +741,11 @@ async function runScan() {
                 crypto_count,
                 scanner_type,
                 hilega_buy_rsi,
-                hilega_sell_rsi
+                hilega_sell_rsi,
+                hilega_rsi_mode,
+                alma_fixed_rsi_length,
+                alma_fixed_vwma_length,
+                alma_fixed_tema_length
             })
         });
 
@@ -583,25 +756,32 @@ async function runScan() {
         const data = await res.json();
         allResults = data.data || [];
         allHilegaResults = data.hilega_data || [];
+        allCrossResults = data.cross_data || [];
 
-        const totalSignals = allResults.length + allHilegaResults.length;
+        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length;
 
         updateProgress(100, 'Scan complete!');
         if (allHilegaResults.length > 0) {
             addLogLine('success', `✅ SCAN COMPLETED — ${allHilegaResults.length} HILEGA signal(s) found`);
+        } else if (allCrossResults.length > 0) {
+            addLogLine('success', `✅ SCAN COMPLETED — ${allCrossResults.length} Cross signal(s) found`);
         } else {
             addLogLine('success', `✅ SCAN COMPLETED — ${allResults.length} signal(s) found`);
         }
 
         populateTfFilter();
         populateHilegaTfFilter();
+        populateCrossTfFilter();
         renderResults();
         renderHilegaResults();
+        renderCrossResults();
         updateStats();
         updateLastScanTime(new Date().toISOString());
 
         if (allHilegaResults.length > 0) {
             showToast(`Scan complete! ${allHilegaResults.length} HILEGA signal(s) found.`, 'success');
+        } else if (allCrossResults.length > 0) {
+            showToast(`Scan complete! ${allCrossResults.length} Cross signal(s) found.`, 'success');
         } else {
             showToast(`Scan complete! ${allResults.length} signal(s) found.`, 'success');
         }
@@ -781,6 +961,7 @@ function initFilterControls() {
                 angle: 'Angle',
                 rsitema: 'RSI-TEMA',
                 rsi: 'RSI',
+                vwma: 'VWMA',
                 change: 'Daily Change'
             };
             const col = colMap[th.dataset.col];
@@ -797,6 +978,59 @@ function initFilterControls() {
             });
             th.classList.add(currentHilegaSort.asc ? 'sorted-asc' : 'sorted-desc');
             renderHilegaResults();
+        });
+    });
+
+    // ═══ CROSS FILTER CONTROLS ═══
+
+    // Cross signal filter chips
+    $$('#crossSignalFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#crossSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            renderCrossResults();
+        });
+    });
+
+    // Cross search
+    let crossSearchTimeout;
+    $('#crossSearchInput').addEventListener('input', () => {
+        clearTimeout(crossSearchTimeout);
+        crossSearchTimeout = setTimeout(renderCrossResults, 200);
+    });
+
+    // Cross timeframe filter
+    $('#crossTfFilter').addEventListener('change', renderCrossResults);
+
+    // Cross column sorting
+    $$('#crossSignalsTable th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const colMap = {
+                name: 'Crypto Name',
+                timeframe: 'Timeperiod',
+                signal: 'Signal Type',
+                candle: 'Candle Status',
+                angle: 'Angle',
+                rsivwma: 'RSI-VWMA',
+                rsi: 'RSI',
+                vwma: 'VWMA',
+                alma: 'ALMA',
+                change: 'Daily Change'
+            };
+            const col = colMap[th.dataset.col];
+            if (currentCrossSort.col === col) {
+                currentCrossSort.asc = !currentCrossSort.asc;
+            } else {
+                currentCrossSort.col = col;
+                currentCrossSort.asc = true;
+            }
+
+            // Update sort icons
+            $$('#crossSignalsTable th.sortable').forEach(t => {
+                t.classList.remove('sorted-asc', 'sorted-desc');
+            });
+            th.classList.add(currentCrossSort.asc ? 'sorted-asc' : 'sorted-desc');
+            renderCrossResults();
         });
     });
 }
@@ -850,7 +1084,7 @@ function exportHilegaCSV() {
         showToast('No Hilega data to export', 'warning');
         return;
     }
-    const headers = ['Asset', 'Timeframe', 'Signal', 'Angle', 'RSI-TEMA', 'RSI', 'Daily Change', 'Timestamp'];
+    const headers = ['Asset', 'Timeframe', 'Signal', 'Angle', 'RSI-TEMA', 'RSI', 'VWMA', 'Daily Change', 'Timestamp'];
     const rows = allHilegaResults.map(r => {
         return [
             r['Crypto Name'],
@@ -859,6 +1093,7 @@ function exportHilegaCSV() {
             r.Angle || '',
             r['RSI-TEMA'] || '',
             r.RSI || '',
+            r.VWMA || '',
             r['Daily Change'] || '',
             r.Timestamp
         ];

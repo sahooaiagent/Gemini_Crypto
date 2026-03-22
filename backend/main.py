@@ -43,6 +43,7 @@ logging.getLogger().addHandler(console_handler)
 latest_scan = {
     "results": [],
     "hilega_results": [],
+    "cross_results": [],
     "scan_time": None,
     "duration": None
 }
@@ -56,6 +57,10 @@ class ScanRequest(BaseModel):
     scanner_type: Optional[Union[str, List[str]]] = "ama_pro"  # Single: 'ama_pro', 'qwen', 'both', etc. OR Multiple: ['ama_pro', 'ama_pro_now']
     hilega_buy_rsi: Optional[int] = 10  # HILEGA BUY RSI threshold
     hilega_sell_rsi: Optional[int] = 90  # HILEGA SELL RSI threshold
+    hilega_rsi_mode: Optional[str] = "ALMA Fixed"  # HILEGA RSI Mode: 'ALMA Fixed', 'ALMA', 'RMA'
+    alma_fixed_rsi_length: Optional[int] = 11  # ALMA Fixed RSI length
+    alma_fixed_vwma_length: Optional[int] = 21  # ALMA Fixed VWMA length
+    alma_fixed_tema_length: Optional[int] = 10  # ALMA Fixed TEMA length
 
 # ── API ROUTES ──
 
@@ -87,34 +92,43 @@ async def trigger_scan(request: ScanRequest):
             crypto_count=request.crypto_count,
             scanner_type=request.scanner_type,
             hilega_buy_rsi=request.hilega_buy_rsi,
-            hilega_sell_rsi=request.hilega_sell_rsi
+            hilega_sell_rsi=request.hilega_sell_rsi,
+            hilega_rsi_mode=request.hilega_rsi_mode,
+            alma_fixed_rsi_length=request.alma_fixed_rsi_length,
+            alma_fixed_vwma_length=request.alma_fixed_vwma_length,
+            alma_fixed_tema_length=request.alma_fixed_tema_length
         )
         
         duration = round(time.time() - start_time, 2)
         scan_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Separate HILEGA results from AMA/Qwen results
+        # Separate HILEGA, Cross, and AMA/Qwen results
         hilega_results = []
+        cross_results = []
         ama_qwen_results = []
 
         for result in results:
             scanner_label = result.get('Scanner', '')
             if 'HILEGA' in scanner_label:
                 hilega_results.append(result)
+            elif 'CROSS' in scanner_label:
+                cross_results.append(result)
             else:
                 ama_qwen_results.append(result)
 
         # Store in memory
         latest_scan["results"] = ama_qwen_results
         latest_scan["hilega_results"] = hilega_results
+        latest_scan["cross_results"] = cross_results
         latest_scan["scan_time"] = scan_time
         latest_scan["duration"] = duration
 
-        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen signal(s) and {len(hilega_results)} HILEGA signal(s).")
+        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen signal(s), {len(hilega_results)} HILEGA signal(s), and {len(cross_results)} Cross signal(s).")
         return {
             "status": "success",
             "data": ama_qwen_results,
             "hilega_data": hilega_results,
+            "cross_data": cross_results,
             "scan_time": scan_time,
             "duration": duration
         }
@@ -128,6 +142,7 @@ async def get_results():
     return {
         "results": latest_scan["results"],
         "hilega_results": latest_scan["hilega_results"],
+        "cross_results": latest_scan["cross_results"],
         "scan_time": latest_scan["scan_time"],
         "duration": latest_scan["duration"]
     }

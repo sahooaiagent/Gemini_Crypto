@@ -316,6 +316,10 @@
                                     <span>RSI</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
+                                <th class="sortable" data-col="vwma">
+                                    <span>VWMA</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                                 <th class="sortable" data-col="change">
                                     <span>Daily Chg</span>
                                     <i class="fas fa-sort sort-icon"></i>
@@ -335,6 +339,95 @@
                 </div>
                 <div class="table-footer">
                     <span id="hilegaResultCount">0 results</span>
+                </div>
+            </div>
+
+            <!-- Cross Signal Results Table -->
+            <div class="card" id="crossSignalsCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-exchange-alt"></i> Detected Signals Cross</h2>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-bar">
+                    <div class="search-input-wrap">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="crossSearchInput" placeholder="Search signals..." autocomplete="off">
+                    </div>
+                    <div class="filter-chips" id="crossSignalFilterChips">
+                        <button class="chip active" data-filter="all">All</button>
+                        <button class="chip" data-filter="Cross UP">
+                            <span class="chip-dot green"></span> Cross UP
+                        </button>
+                        <button class="chip" data-filter="Cross DN">
+                            <span class="chip-dot red"></span> Cross DN
+                        </button>
+                    </div>
+                    <select class="filter-dropdown" id="crossTfFilter">
+                        <option value="all">All Timeframes</option>
+                    </select>
+                </div>
+
+                <!-- Table -->
+                <div class="table-wrap">
+                    <table id="crossSignalsTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-col="name">
+                                    <span>Asset</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="timeframe">
+                                    <span>Timeframe</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="signal">
+                                    <span>Signal</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="candle">
+                                    <span>Candle</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="angle">
+                                    <span>Angle</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="rsivwma">
+                                    <span>RSI-VWMA</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="rsi">
+                                    <span>RSI</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="vwma">
+                                    <span>VWMA</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="alma">
+                                    <span>ALMA</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="change">
+                                    <span>Daily Chg</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="crossSignalsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div class="empty-state" id="crossEmptyState">
+                        <i class="fas fa-satellite-dish"></i>
+                        <p>No Cross signals detected yet</p>
+                        <span>Run a Cross scan to detect RSI/VWMA crossover signals</span>
+                    </div>
+                </div>
+                <div class="table-footer">
+                    <span id="crossResultCount">0 results</span>
                 </div>
             </div>
         </section>
@@ -389,6 +482,8 @@
                                 <button class="scanner-chip" data-scanner="all">All</button>
                                 <button class="scanner-chip" data-scanner="hilega_buy">HILEGA BUY</button>
                                 <button class="scanner-chip" data-scanner="hilega_sell">HILEGA SELL</button>
+                                <button class="scanner-chip" data-scanner="rsi_cross_up_vwma">RSI Cross UP VWMA</button>
+                                <button class="scanner-chip" data-scanner="rsi_cross_dn_vwma">RSI Cross DN VWMA</button>
                             </div>
                             <p class="config-hint">Select which scanner strategy to use for signal detection</p>
                         </div>
@@ -466,6 +561,38 @@
                                 </div>
                             </div>
                             <p class="config-hint">HILEGA BUY triggers when True RSI ≤ threshold | HILEGA SELL triggers when True RSI ≥ threshold</p>
+                        </div>
+
+                        <!-- RSI Setup Section (only visible for HILEGA scanners) -->
+                        <div class="config-section full-width" id="hilegaRsiSetupSection" style="display: none;">
+                            <label class="config-label">RSI Setup</label>
+                            <div class="params-row">
+                                <div class="param-group">
+                                    <label for="hilegaRsiMode">HILEGA RSI Mode</label>
+                                    <select id="hilegaRsiMode" class="filter-dropdown">
+                                        <option value="ALMA Fixed" selected>ALMA Fixed</option>
+                                        <option value="ALMA">ALMA (Adaptive)</option>
+                                        <option value="RMA">RMA (Adaptive)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- ALMA Fixed Length Inputs (only visible when ALMA Fixed is selected) -->
+                            <div class="params-row" id="almaFixedLengthsRow">
+                                <div class="param-group">
+                                    <label for="almaFixedRsiLength">RSI Length</label>
+                                    <input type="number" id="almaFixedRsiLength" class="filter-dropdown" value="11" min="5" max="35">
+                                </div>
+                                <div class="param-group">
+                                    <label for="almaFixedVwmaLength">VWMA Length</label>
+                                    <input type="number" id="almaFixedVwmaLength" class="filter-dropdown" value="21" min="10" max="50">
+                                </div>
+                                <div class="param-group">
+                                    <label for="almaFixedTemaLength">TEMA Length</label>
+                                    <input type="number" id="almaFixedTemaLength" class="filter-dropdown" value="10" min="3" max="100">
+                                </div>
+                            </div>
+                            <p class="config-hint" id="hilegaRsiModeHint">ALMA Fixed: Use ALMA smoothing with custom fixed lengths (defaults: RSI=11, VWMA=21, TEMA=10)</p>
                         </div>
                     </div>
 
