@@ -471,15 +471,24 @@
                         </div>
 
                         <div class="config-section">
-                            <label class="config-label">Scanner Type</label>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <label class="config-label" style="margin: 0;">Scanner Type</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <button class="btn btn-sm btn-all-scanners" id="allScannersBtn">
+                                        <i class="fas fa-check-double"></i> ALL
+                                    </button>
+                                    <button class="btn btn-sm btn-reset-tf" id="resetScannerTypeBtn">
+                                        <i class="fas fa-undo"></i> RESET
+                                    </button>
+                                </div>
+                            </div>
                             <div class="scanner-type-chips" id="scannerTypeChips">
-                                <button class="scanner-chip active" data-scanner="ama_pro">AMA Pro</button>
-                                <button class="scanner-chip" data-scanner="qwen">Qwen</button>
-                                <button class="scanner-chip" data-scanner="both">Both</button>
+                                <button class="scanner-chip active" data-scanner="ama_pro">AMA Pro Pre</button>
+                                <button class="scanner-chip" data-scanner="qwen">Qwen Pre</button>
+                                <button class="scanner-chip" data-scanner="both">Both Pre</button>
                                 <button class="scanner-chip active" data-scanner="ama_pro_now">AMA Pro Now</button>
                                 <button class="scanner-chip" data-scanner="qwen_now">Qwen Now</button>
                                 <button class="scanner-chip" data-scanner="both_now">Both Now</button>
-                                <button class="scanner-chip" data-scanner="all">All</button>
                                 <button class="scanner-chip" data-scanner="hilega_buy">HILEGA BUY</button>
                                 <button class="scanner-chip" data-scanner="hilega_sell">HILEGA SELL</button>
                                 <button class="scanner-chip" data-scanner="rsi_cross_up_vwma">RSI Cross UP VWMA</button>
@@ -489,7 +498,12 @@
                         </div>
 
                         <div class="config-section">
-                            <label class="config-label">Timeframes</label>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                <label class="config-label" style="margin: 0;">Timeframes</label>
+                                <button class="btn btn-sm btn-reset-tf" id="resetTimeframesBtn">
+                                    <i class="fas fa-undo"></i> RESET
+                                </button>
+                            </div>
                             <div class="tf-chips" id="tfChips">
                                 <button class="tf-chip active" data-tf="5min">5m</button>
                                 <button class="tf-chip active" data-tf="10min">10m</button>
@@ -500,10 +514,16 @@
                                 <button class="tf-chip" data-tf="45min">45m</button>
                                 <button class="tf-chip" data-tf="1hr">1h</button>
                                 <button class="tf-chip" data-tf="2hr">2h</button>
+                                <button class="tf-chip" data-tf="3hr">3h</button>
                                 <button class="tf-chip" data-tf="4hr">4h</button>
+                                <button class="tf-chip" data-tf="5hr">5h</button>
                                 <button class="tf-chip" data-tf="6hr">6h</button>
                                 <button class="tf-chip" data-tf="8hr">8h</button>
+                                <button class="tf-chip" data-tf="9hr">9h</button>
                                 <button class="tf-chip" data-tf="12hr">12h</button>
+                                <button class="tf-chip" data-tf="15hr">15h</button>
+                                <button class="tf-chip" data-tf="18hr">18h</button>
+                                <button class="tf-chip" data-tf="20hr">20h</button>
                                 <button class="tf-chip" data-tf="1 day">1D</button>
                                 <button class="tf-chip" data-tf="2 day">2D</button>
                                 <button class="tf-chip" data-tf="3 day">3D</button>

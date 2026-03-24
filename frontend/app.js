@@ -576,6 +576,52 @@ function initScannerControls() {
         chip.addEventListener('click', () => chip.classList.toggle('active'));
     });
 
+    // Reset Timeframes button
+    $('#resetTimeframesBtn').addEventListener('click', () => {
+        $$('.tf-chip').forEach(chip => {
+            chip.classList.remove('active');
+        });
+    });
+
+    // Reset Scanner Type button
+    $('#resetScannerTypeBtn').addEventListener('click', () => {
+        $$('.scanner-chip').forEach(chip => {
+            chip.classList.remove('active');
+        });
+        // Deactivate ALL button
+        $('#allScannersBtn').classList.remove('active');
+        // Update HILEGA RSI Setup visibility after resetting
+        updateHilegaRsiSetupVisibility();
+    });
+
+    // All Scanners button
+    $('#allScannersBtn').addEventListener('click', () => {
+        const allBtn = $('#allScannersBtn');
+        allBtn.classList.toggle('active');
+
+        // If ALL is activated, deselect all individual chips
+        if (allBtn.classList.contains('active')) {
+            $$('.scanner-chip').forEach(chip => {
+                chip.classList.remove('active');
+            });
+        }
+        // Update HILEGA RSI Setup visibility (show if ALL is active since it includes HILEGA)
+        if (allBtn.classList.contains('active')) {
+            $('#hilegaRsiSetupSection').style.display = 'block';
+        } else {
+            updateHilegaRsiSetupVisibility();
+        }
+    });
+
+    // Update scanner chip click behavior to deactivate ALL button
+    $$('.scanner-chip').forEach(chip => {
+        const originalListener = chip.onclick;
+        chip.addEventListener('click', () => {
+            // If any individual chip is clicked, deactivate ALL button
+            $('#allScannersBtn').classList.remove('active');
+        });
+    });
+
     // HILEGA RSI Setup visibility and controls
     updateHilegaRsiSetupVisibility();
     $$('.scanner-chip').forEach(chip => {
@@ -666,23 +712,26 @@ async function runScan() {
     const alma_fixed_vwma_length = parseInt($('#almaFixedVwmaLength').value) || 21;
     const alma_fixed_tema_length = parseInt($('#almaFixedTemaLength').value) || 10;
 
+    // Check if ALL button is active
+    const isAllActive = $('#allScannersBtn').classList.contains('active');
+
     // Get all selected scanner types
-    const selectedScanners = Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
+    const selectedScanners = isAllActive ? [] : Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
 
     if (timeframes.length === 0) {
         showToast('Select at least one timeframe', 'warning');
         return;
     }
 
-    if (selectedScanners.length === 0) {
+    if (!isAllActive && selectedScanners.length === 0) {
         showToast('Select at least one scanner type', 'warning');
         return;
     }
 
     // Determine scanner_type based on selections
     let scanner_type;
-    if (selectedScanners.includes('all')) {
-        // "All" selected - use 'all' string
+    if (isAllActive) {
+        // "ALL" button is active - use 'all' string
         scanner_type = 'all';
     } else if (selectedScanners.length === 1) {
         // Single scanner - send as string
@@ -714,7 +763,7 @@ async function runScan() {
 
     // Add scan start log
     const scannerLabels = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners' };
-    const scannerLabel = selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabels[s] || s).join(' + ') : (scannerLabels[selectedScanners[0]] || selectedScanners[0]);
+    const scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabels[s] || s).join(' + ') : (scannerLabels[selectedScanners[0]] || selectedScanners[0]));
     addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Scanner: ${scannerLabel} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
 
     // Start log polling

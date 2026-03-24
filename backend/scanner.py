@@ -118,10 +118,16 @@ async def fetch_binance_data(symbol, timeframe, limit=500):
         '45min': '15m',
         '1hr': '1h',
         '2hr': '2h',
+        '3hr': '1h',
         '4hr': '4h',
+        '5hr': '1h',
         '6hr': '6h',
         '8hr': '8h',
+        '9hr': '1h',
         '12hr': '12h',
+        '15hr': '1h',
+        '18hr': '1h',
+        '20hr': '1h',
         '1 day': '1d',
         '2 day': '1d',
         '3 day': '1d',
@@ -150,6 +156,12 @@ async def fetch_binance_data(symbol, timeframe, limit=500):
             '20min': '20min',
             '25min': '25min',
             '45min': '45min',
+            '3hr': '3h',
+            '5hr': '5h',
+            '9hr': '9h',
+            '15hr': '15h',
+            '18hr': '18h',
+            '20hr': '20h',
             '2 day': '2D',
             '3 day': '3D',
             '4 day': '4D',
@@ -1435,20 +1447,20 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_qwen = 'qwen' in scanner_type or 'both' in scanner_type or 'all' in scanner_type
         run_ama_now = 'ama_pro_now' in scanner_type or 'both_now' in scanner_type or 'all' in scanner_type
         run_qwen_now = 'qwen_now' in scanner_type or 'both_now' in scanner_type or 'all' in scanner_type
-        run_hilega_buy = 'hilega_buy' in scanner_type
-        run_hilega_sell = 'hilega_sell' in scanner_type
-        run_cross_up = 'rsi_cross_up_vwma' in scanner_type
-        run_cross_down = 'rsi_cross_dn_vwma' in scanner_type
+        run_hilega_buy = 'hilega_buy' in scanner_type or 'all' in scanner_type
+        run_hilega_sell = 'hilega_sell' in scanner_type or 'all' in scanner_type
+        run_cross_up = 'rsi_cross_up_vwma' in scanner_type or 'all' in scanner_type
+        run_cross_down = 'rsi_cross_dn_vwma' in scanner_type or 'all' in scanner_type
     else:
         # Single scanner type (original logic)
         run_ama = scanner_type in ('ama_pro', 'both', 'all')
         run_qwen = scanner_type in ('qwen', 'both', 'all')
         run_ama_now = scanner_type in ('ama_pro_now', 'both_now', 'all')
         run_qwen_now = scanner_type in ('qwen_now', 'both_now', 'all')
-        run_hilega_buy = scanner_type == 'hilega_buy'
-        run_hilega_sell = scanner_type == 'hilega_sell'
-        run_cross_up = scanner_type == 'rsi_cross_up_vwma'
-        run_cross_down = scanner_type == 'rsi_cross_dn_vwma'
+        run_hilega_buy = scanner_type in ('hilega_buy', 'all')
+        run_hilega_sell = scanner_type in ('hilega_sell', 'all')
+        run_cross_up = scanner_type in ('rsi_cross_up_vwma', 'all')
+        run_cross_down = scanner_type in ('rsi_cross_dn_vwma', 'all')
 
     async with semaphore:
         for tf in timeframes:
