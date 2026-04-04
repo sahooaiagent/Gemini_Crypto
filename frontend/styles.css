@@ -131,6 +131,11 @@
     border: 1px solid rgba(0, 0, 0, 0.10);
 }
 
+[data-theme="light"] .ma-type-badge {
+    background: rgba(180, 100, 0, 0.10);
+    color: #a05000;
+}
+
 [data-theme="light"] .bg-canvas {
     display: none; /* Hide animated background in light mode */
 }
@@ -1398,6 +1403,17 @@ tbody tr:hover {
     background: var(--cyan-dim);
     padding: 3px 10px;
     border-radius: 4px;
+}
+
+.ma-type-badge {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #f0a500;
+    background: rgba(240, 165, 0, 0.12);
+    padding: 3px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
 }
 
 .change-positive {

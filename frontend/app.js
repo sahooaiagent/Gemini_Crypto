@@ -193,7 +193,7 @@ function renderResults() {
         if (scannerFilter !== 'all') {
             const s = r.Scanner || '';
             if (scannerFilter === 'Both') {
-                if (s !== 'AMA Pro' && s !== 'Qwen' && s !== 'Both') return false;
+                if (s !== 'AMA Pro Pre' && s !== 'Qwen' && s !== 'Both') return false;
             } else if (scannerFilter === 'Both Now') {
                 if (s !== 'AMA Pro Now' && s !== 'Qwen Now' && s !== 'Both Now') return false;
             } else if (s !== scannerFilter) return false;
@@ -245,15 +245,12 @@ function renderResults() {
         const badgeMap = {
             'Both': 'scanner-both',
             'Qwen': 'scanner-qwen',
-            'AMA Pro': 'scanner-ama',
+            'AMA Pro Pre': 'scanner-ama',
             'AMA Pro Now': 'scanner-ama-now',
             'Qwen Now': 'scanner-qwen-now',
             'Both Now': 'scanner-both-now',
-            'AMA Pro Previous (Entry)': 'scanner-ama-entry',
-            'AMA Pro Now (Entry)': 'scanner-ama-now-entry',
-            'Both Previous (Entry)': 'scanner-both-entry',
-            'Both Now (Entry)': 'scanner-both-now-entry',
-            'Qwen Previous (Entry)': 'scanner-qwen-entry',
+            'Both Pre': 'scanner-both-entry',
+            'Qwen Pre': 'scanner-qwen-entry',
             'Qwen Now (Entry)': 'scanner-qwen-now-entry'
         };
         const scannerBadgeCls = badgeMap[r.Scanner] || '';
@@ -278,6 +275,7 @@ function renderResults() {
                 <td class="mono">${rsiStr}</td>
                 <td class="${changeCls}">${changeStr}</td>
                 <td>${scannerBadgeCls ? `<span class="scanner-badge ${scannerBadgeCls}">${scannerVal}</span>` : scannerVal}</td>
+                <td><span class="ma-type-badge">${r['MA Type'] || '—'}</span></td>
                 <td class="mono">${r.Timestamp || '—'}</td>
                 <td class="${colorCls}"><strong>${candleDisplay}</strong></td>
             </tr>
@@ -694,6 +692,28 @@ function updateAlmaFixedLengthsVisibility() {
     }
 }
 
+// ══════════════════════════════════════════════════════════════
+// MODERN COLLAPSIBLE SECTIONS
+// ══════════════════════════════════════════════════════════════
+function initModernCollapse() {
+    $$('.section-header-collapse').forEach(header => {
+        header.addEventListener('click', () => {
+            const targetId = header.dataset.collapse;
+            const content = $(`#${targetId}`);
+
+            if (content) {
+                header.classList.toggle('collapsed');
+                content.classList.toggle('collapsed');
+            }
+        });
+    });
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', () => {
+    initModernCollapse();
+});
+
 async function runScan() {
     if (scanRunning) return;
 
@@ -701,6 +721,12 @@ async function runScan() {
     const timeframes = Array.from($$('.tf-chip.active')).map(c => c.dataset.tf);
     const adaptation_speed = $('#adaptationSpeed').value;
     const min_bars_between = parseInt($('#minBarsBetween').value) || 3;
+    const ma_type = $('#maType').value || 'ALMA';  // Get MA type selection
+
+    // Get Advanced Filter toggles
+    const enable_regime_filter = $('#enableRegimeFilter').checked;
+    const enable_volume_filter = $('#enableVolumeFilter').checked;
+    const enable_angle_filter = $('#enableAngleFilter').checked;
 
     // Get HILEGA RSI thresholds
     const hilega_buy_rsi = parseInt($('#hilegaBuyRsi').value) || 10;
@@ -764,7 +790,7 @@ async function runScan() {
     // Add scan start log
     const scannerLabels = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners' };
     const scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabels[s] || s).join(' + ') : (scannerLabels[selectedScanners[0]] || selectedScanners[0]));
-    addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Scanner: ${scannerLabel} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
+    addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Scanner: ${scannerLabel} | MA: ${ma_type} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
 
     // Start log polling
     startLogPolling();
@@ -789,6 +815,10 @@ async function runScan() {
                 min_bars_between,
                 crypto_count,
                 scanner_type,
+                ma_type,  // Add MA type to request
+                enable_regime_filter,  // Advanced filter toggles
+                enable_volume_filter,
+                enable_angle_filter,
                 hilega_buy_rsi,
                 hilega_sell_rsi,
                 hilega_rsi_mode,

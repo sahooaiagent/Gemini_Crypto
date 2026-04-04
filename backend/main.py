@@ -55,6 +55,11 @@ class ScanRequest(BaseModel):
     min_bars_between: Optional[int] = 3
     crypto_count: Optional[int] = 20
     scanner_type: Optional[Union[str, List[str]]] = "ama_pro"  # Single: 'ama_pro', 'qwen', 'both', etc. OR Multiple: ['ama_pro', 'ama_pro_now']
+    ma_type: Optional[str] = "ALMA"  # Moving Average Type: 'ALMA', 'JMA', 'T3', 'McGinley', 'KAMA'
+    auto_ma_type: Optional[bool] = True  # Auto-select MA type based on asset+timeframe (overrides ma_type)
+    enable_regime_filter: Optional[bool] = True  # Advanced Filter: Regime Detection
+    enable_volume_filter: Optional[bool] = False  # Advanced Filter: Volume Confirmation
+    enable_angle_filter: Optional[bool] = True  # Advanced Filter: Angle Threshold
     hilega_buy_rsi: Optional[int] = 10  # HILEGA BUY RSI threshold
     hilega_sell_rsi: Optional[int] = 90  # HILEGA SELL RSI threshold
     hilega_rsi_mode: Optional[str] = "ALMA Fixed"  # HILEGA RSI Mode: 'ALMA Fixed', 'ALMA', 'RMA'
@@ -91,6 +96,11 @@ async def trigger_scan(request: ScanRequest):
             min_bars_between=request.min_bars_between,
             crypto_count=request.crypto_count,
             scanner_type=request.scanner_type,
+            ma_type=request.ma_type,
+            auto_ma_type=request.auto_ma_type,  # Auto-select MA type based on timeframe
+            enable_regime_filter=request.enable_regime_filter,  # Pass filter toggles
+            enable_volume_filter=request.enable_volume_filter,
+            enable_angle_filter=request.enable_angle_filter,
             hilega_buy_rsi=request.hilega_buy_rsi,
             hilega_sell_rsi=request.hilega_sell_rsi,
             hilega_rsi_mode=request.hilega_rsi_mode,

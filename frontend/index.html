@@ -13,6 +13,7 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css?v=8">
+    <link rel="stylesheet" href="modern-config.css?v=1">
 </head>
 
 <body>
@@ -237,6 +238,7 @@
                                     <span>Scanner</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
+                                <th>MA Type</th>
                                 <th>Timestamp</th>
                                 <th>Candle</th>
                             </tr>
@@ -441,146 +443,246 @@
                 </div>
             </header>
 
-            <div class="scanner-layout scanner-two-col">
-                <div class="card scanner-config-card">
-                    <h2><i class="fas fa-sliders-h"></i> Scan Configuration</h2>
+            <!-- Sticky Run Scanner Button -->
+            <div class="sticky-scan-btn-wrap">
+                <button class="btn btn-primary btn-scan-sticky pulse-glow" id="runScanBtn">
+                    <i class="fas fa-rocket"></i>
+                    <span>Run Scanner</span>
+                </button>
+            </div>
 
-                    <div class="config-grid">
-                        <div class="config-section">
-                            <label class="config-label">Analysis Scope</label>
-                            <div class="crypto-count-wrap">
-                                <label for="cryptoCount" class="sub-label">Number of cryptos to be scanned</label>
-                                <select id="cryptoCount" class="filter-dropdown full-width">
-                                    <option value="5">Top 5 Coins</option>
-                                    <option value="10">Top 10 Coins</option>
-                                    <option value="20">Top 20 Coins</option>
-                                    <option value="50">Top 50 Coins</option>
-                                    <option value="100">Top 100 Coins</option>
-                                    <option value="200">Top 200 Coins</option>
-                                    <option value="300">Top 300 Coins</option>
-                                    <option value="400">Top 400 Coins</option>
-                                    <option value="500">Top 500 Coins</option>
-                                </select>
-                                <p class="config-hint">Sorted by 24h trading volume on Binance</p>
+            <div class="scanner-layout-modern">
+                <div class="card scanner-config-card modern-card full-width-card">
+                        <div class="card-header-modern">
+                            <div class="card-icon-wrap">
+                                <i class="fas fa-sliders-h"></i>
+                            </div>
+                            <div>
+                                <h2 class="card-title-modern">Scan Configuration</h2>
+                                <p class="card-subtitle-modern">Customize your analysis parameters</p>
+                            </div>
+                        </div>
+
+                    <div class="config-grid-modern">
+                        <!-- Core Settings Section -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse" data-collapse="core-settings">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-cog section-icon"></i>
+                                    <span class="section-title">Core Settings</span>
+                                </div>
+                                <i class="fas fa-chevron-down collapse-icon"></i>
+                            </div>
+                            <div class="section-content" id="core-settings">
+                                <div class="form-group-modern">
+                                    <label for="cryptoCount" class="label-modern">
+                                        <i class="fas fa-coins label-icon"></i>
+                                        Crypto Count
+                                    </label>
+                                    <select id="cryptoCount" class="select-modern">
+                                        <option value="5">Top 5 Coins</option>
+                                        <option value="10">Top 10 Coins</option>
+                                        <option value="20" selected>Top 20 Coins</option>
+                                        <option value="50">Top 50 Coins</option>
+                                        <option value="100">Top 100 Coins</option>
+                                        <option value="200">Top 200 Coins</option>
+                                        <option value="300">Top 300 Coins</option>
+                                        <option value="400">Top 400 Coins</option>
+                                        <option value="500">Top 500 Coins</option>
+                                    </select>
+                                    <span class="hint-modern">Sorted by 24h volume on Binance</span>
+                                </div>
+
+                                <div class="form-group-modern">
+                                    <label for="maType" class="label-modern">
+                                        <i class="fas fa-chart-line label-icon"></i>
+                                        Moving Average Type
+                                    </label>
+                                    <select id="maType" class="select-modern">
+                                        <option value="ALMA" selected>ALMA (Arnaud Legoux)</option>
+                                        <option value="JMA">JMA (Jurik)</option>
+                                        <option value="T3">T3 (Triple Exponential)</option>
+                                        <option value="McGinley">McGinley Dynamic</option>
+                                        <option value="KAMA">KAMA (Kaufman Adaptive)</option>
+                                    </select>
+                                    <span class="hint-modern">MA algorithm for AMA Pro scanner</span>
+                                </div>
+
+                                <div class="form-group-modern">
+                                    <label class="label-modern">
+                                        <i class="fas fa-filter label-icon"></i>
+                                        Advanced Filters
+                                    </label>
+                                    <div class="toggle-group-modern">
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="enableRegimeFilter" checked class="toggle-checkbox">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">Regime Detection</span>
+                                        </label>
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="enableVolumeFilter" class="toggle-checkbox">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">Volume Confirmation</span>
+                                        </label>
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="enableAngleFilter" checked class="toggle-checkbox">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">Angle Threshold</span>
+                                        </label>
+                                    </div>
+                                    <span class="hint-modern">Toggle filters for signal quality</span>
+                                </div>
                             </div>
                         </div>
 
                         <div class="index-chips hidden" id="indexChips">
-                            <!-- Hidden but kept for JS compatibility if needed temporarily -->
                             <button class="index-chip active" data-index="CRYPTO">Crypto</button>
                         </div>
 
-                        <div class="config-section">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                <label class="config-label" style="margin: 0;">Scanner Type</label>
-                                <div style="display: flex; gap: 8px;">
-                                    <button class="btn btn-sm btn-all-scanners" id="allScannersBtn">
+                        <!-- Scanner Type Section -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse" data-collapse="scanner-type">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-radar section-icon"></i>
+                                    <span class="section-title">Scanner Type</span>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <button class="section-action-btn" id="allScannersBtn">
                                         <i class="fas fa-check-double"></i> ALL
                                     </button>
-                                    <button class="btn btn-sm btn-reset-tf" id="resetScannerTypeBtn">
+                                    <button class="section-action-btn" id="resetScannerTypeBtn">
                                         <i class="fas fa-undo"></i> RESET
                                     </button>
+                                    <i class="fas fa-chevron-down collapse-icon"></i>
                                 </div>
                             </div>
-                            <div class="scanner-type-chips" id="scannerTypeChips">
-                                <button class="scanner-chip active" data-scanner="ama_pro">AMA Pro Pre</button>
-                                <button class="scanner-chip" data-scanner="qwen">Qwen Pre</button>
-                                <button class="scanner-chip" data-scanner="both">Both Pre</button>
-                                <button class="scanner-chip active" data-scanner="ama_pro_now">AMA Pro Now</button>
-                                <button class="scanner-chip" data-scanner="qwen_now">Qwen Now</button>
-                                <button class="scanner-chip" data-scanner="both_now">Both Now</button>
-                                <button class="scanner-chip" data-scanner="hilega_buy">HILEGA BUY</button>
-                                <button class="scanner-chip" data-scanner="hilega_sell">HILEGA SELL</button>
-                                <button class="scanner-chip" data-scanner="rsi_cross_up_vwma">RSI Cross UP VWMA</button>
-                                <button class="scanner-chip" data-scanner="rsi_cross_dn_vwma">RSI Cross DN VWMA</button>
-                            </div>
-                            <p class="config-hint">Select which scanner strategy to use for signal detection</p>
-                        </div>
-
-                        <div class="config-section">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                <label class="config-label" style="margin: 0;">Timeframes</label>
-                                <button class="btn btn-sm btn-reset-tf" id="resetTimeframesBtn">
-                                    <i class="fas fa-undo"></i> RESET
-                                </button>
-                            </div>
-                            <div class="tf-chips" id="tfChips">
-                                <button class="tf-chip active" data-tf="5min">5m</button>
-                                <button class="tf-chip active" data-tf="10min">10m</button>
-                                <button class="tf-chip active" data-tf="15min">15m</button>
-                                <button class="tf-chip active" data-tf="20min">20m</button>
-                                <button class="tf-chip active" data-tf="25min">25m</button>
-                                <button class="tf-chip active" data-tf="30min">30m</button>
-                                <button class="tf-chip" data-tf="45min">45m</button>
-                                <button class="tf-chip" data-tf="1hr">1h</button>
-                                <button class="tf-chip" data-tf="2hr">2h</button>
-                                <button class="tf-chip" data-tf="3hr">3h</button>
-                                <button class="tf-chip" data-tf="4hr">4h</button>
-                                <button class="tf-chip" data-tf="5hr">5h</button>
-                                <button class="tf-chip" data-tf="6hr">6h</button>
-                                <button class="tf-chip" data-tf="8hr">8h</button>
-                                <button class="tf-chip" data-tf="9hr">9h</button>
-                                <button class="tf-chip" data-tf="12hr">12h</button>
-                                <button class="tf-chip" data-tf="15hr">15h</button>
-                                <button class="tf-chip" data-tf="18hr">18h</button>
-                                <button class="tf-chip" data-tf="20hr">20h</button>
-                                <button class="tf-chip" data-tf="1 day">1D</button>
-                                <button class="tf-chip" data-tf="2 day">2D</button>
-                                <button class="tf-chip" data-tf="3 day">3D</button>
-                                <button class="tf-chip" data-tf="4 day">4D</button>
-                                <button class="tf-chip" data-tf="5 day">5D</button>
-                                <button class="tf-chip" data-tf="6 day">6D</button>
-                                <button class="tf-chip" data-tf="1 week">1W</button>
-                                <button class="tf-chip" data-tf="1 month">1M</button>
+                            <div class="section-content" id="scanner-type">
+                                <div class="scanner-type-chips-modern" id="scannerTypeChips">
+                                    <button class="chip-modern active scanner-chip" data-scanner="ama_pro">AMA Pro Pre</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="qwen">Qwen Pre</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="both">Both Pre</button>
+                                    <button class="chip-modern active scanner-chip" data-scanner="ama_pro_now">AMA Pro Now</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="qwen_now">Qwen Now</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="both_now">Both Now</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="hilega_buy">HILEGA BUY</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="hilega_sell">HILEGA SELL</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="rsi_cross_up_vwma">RSI Cross UP VWMA</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="rsi_cross_dn_vwma">RSI Cross DN VWMA</button>
+                                </div>
+                                <span class="hint-modern" style="margin-top: 12px;">Select scanner strategies for signal detection</span>
                             </div>
                         </div>
 
-                        <div class="config-section full-width">
-                            <label class="config-label">Strategy Parameters</label>
-                            <div class="params-row">
-                                <div class="param-group">
-                                    <label for="adaptationSpeed">Adaptation Speed</label>
-                                    <select id="adaptationSpeed" class="filter-dropdown">
-                                        <option value="Low">Low</option>
-                                        <option value="Medium" selected>Medium</option>
-                                        <option value="High">High</option>
-                                    </select>
+                        <!-- Timeframes Section -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse" data-collapse="timeframes">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-clock section-icon"></i>
+                                    <span class="section-title">Timeframes</span>
                                 </div>
-                                <div class="param-group">
-                                    <label for="minBarsBetween">Min Bars Between Signals</label>
-                                    <input type="number" id="minBarsBetween" class="filter-dropdown" value="3" min="1"
-                                        max="20">
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <button class="section-action-btn" id="resetTimeframesBtn">
+                                        <i class="fas fa-undo"></i> RESET
+                                    </button>
+                                    <i class="fas fa-chevron-down collapse-icon"></i>
+                                </div>
+                            </div>
+                            <div class="section-content" id="timeframes">
+                                <div class="tf-chips-modern" id="tfChips">
+                                <button class="chip-modern active tf-chip" data-tf="5min">5m</button>
+                                <button class="chip-modern active tf-chip" data-tf="10min">10m</button>
+                                <button class="chip-modern active tf-chip" data-tf="15min">15m</button>
+                                <button class="chip-modern active tf-chip" data-tf="20min">20m</button>
+                                <button class="chip-modern active tf-chip" data-tf="25min">25m</button>
+                                <button class="chip-modern active tf-chip" data-tf="30min">30m</button>
+                                <button class="chip-modern tf-chip" data-tf="45min">45m</button>
+                                <button class="chip-modern tf-chip" data-tf="1hr">1h</button>
+                                <button class="chip-modern tf-chip" data-tf="2hr">2h</button>
+                                <button class="chip-modern tf-chip" data-tf="3hr">3h</button>
+                                <button class="chip-modern tf-chip" data-tf="4hr">4h</button>
+                                <button class="chip-modern tf-chip" data-tf="5hr">5h</button>
+                                <button class="chip-modern tf-chip" data-tf="6hr">6h</button>
+                                <button class="chip-modern tf-chip" data-tf="8hr">8h</button>
+                                <button class="chip-modern tf-chip" data-tf="9hr">9h</button>
+                                <button class="chip-modern tf-chip" data-tf="12hr">12h</button>
+                                <button class="chip-modern tf-chip" data-tf="15hr">15h</button>
+                                <button class="chip-modern tf-chip" data-tf="18hr">18h</button>
+                                <button class="chip-modern tf-chip" data-tf="20hr">20h</button>
+                                <button class="chip-modern tf-chip" data-tf="1 day">1D</button>
+                                <button class="chip-modern tf-chip" data-tf="2 day">2D</button>
+                                <button class="chip-modern tf-chip" data-tf="3 day">3D</button>
+                                <button class="chip-modern tf-chip" data-tf="4 day">4D</button>
+                                <button class="chip-modern tf-chip" data-tf="5 day">5D</button>
+                                <button class="chip-modern tf-chip" data-tf="6 day">6D</button>
+                                <button class="chip-modern tf-chip" data-tf="1 week">1W</button>
+                                <button class="chip-modern tf-chip" data-tf="1 month">1M</button>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="config-section full-width">
-                            <label class="config-label">HILEGA Parameters</label>
-                            <div class="params-row">
-                                <div class="param-group">
-                                    <label for="hilegaBuyRsi">HILEGA BUY - True RSI Threshold</label>
-                                    <select id="hilegaBuyRsi" class="filter-dropdown">
-                                        <option value="5">5</option>
-                                        <option value="10" selected>10</option>
-                                        <option value="15">15</option>
-                                        <option value="20">20</option>
-                                        <option value="25">25</option>
-                                        <option value="30">30</option>
-                                    </select>
+                        <!-- Strategy Parameters Section -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse" data-collapse="strategy-params">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-brain section-icon"></i>
+                                    <span class="section-title">Strategy Parameters</span>
                                 </div>
-                                <div class="param-group">
-                                    <label for="hilegaSellRsi">HILEGA SELL - True RSI Threshold</label>
-                                    <select id="hilegaSellRsi" class="filter-dropdown">
-                                        <option value="70">70</option>
-                                        <option value="75">75</option>
-                                        <option value="80">80</option>
-                                        <option value="85">85</option>
-                                        <option value="90" selected>90</option>
-                                        <option value="95">95</option>
-                                    </select>
+                                <i class="fas fa-chevron-down collapse-icon"></i>
+                            </div>
+                            <div class="section-content" id="strategy-params">
+                                <div class="params-row-modern">
+                                    <div class="param-group-modern">
+                                        <label for="adaptationSpeed">Adaptation Speed</label>
+                                        <select id="adaptationSpeed" class="select-modern">
+                                            <option value="Low">Low</option>
+                                            <option value="Medium" selected>Medium</option>
+                                            <option value="High">High</option>
+                                        </select>
+                                    </div>
+                                    <div class="param-group-modern">
+                                        <label for="minBarsBetween">Min Bars Between Signals</label>
+                                        <input type="number" id="minBarsBetween" class="select-modern" value="3" min="1" max="20">
+                                    </div>
                                 </div>
                             </div>
-                            <p class="config-hint">HILEGA BUY triggers when True RSI ≤ threshold | HILEGA SELL triggers when True RSI ≥ threshold</p>
+                        </div>
+
+                        <!-- HILEGA Parameters Section -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse collapsed" data-collapse="hilega-params">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-chart-area section-icon"></i>
+                                    <span class="section-title">HILEGA Parameters</span>
+                                </div>
+                                <i class="fas fa-chevron-down collapse-icon"></i>
+                            </div>
+                            <div class="section-content collapsed" id="hilega-params">
+                                <div class="params-row-modern">
+                                    <div class="param-group-modern">
+                                        <label for="hilegaBuyRsi">HILEGA BUY - True RSI Threshold</label>
+                                        <select id="hilegaBuyRsi" class="select-modern">
+                                            <option value="5">5</option>
+                                            <option value="10" selected>10</option>
+                                            <option value="15">15</option>
+                                            <option value="20">20</option>
+                                            <option value="25">25</option>
+                                            <option value="30">30</option>
+                                        </select>
+                                    </div>
+                                    <div class="param-group-modern">
+                                        <label for="hilegaSellRsi">HILEGA SELL - True RSI Threshold</label>
+                                        <select id="hilegaSellRsi" class="select-modern">
+                                            <option value="70">70</option>
+                                            <option value="75">75</option>
+                                            <option value="80">80</option>
+                                            <option value="85">85</option>
+                                            <option value="90" selected>90</option>
+                                            <option value="95">95</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <span class="hint-modern" style="margin-top: 12px;">HILEGA BUY triggers when True RSI ≤ threshold | HILEGA SELL triggers when True RSI ≥ threshold</span>
+                            </div>
                         </div>
 
                         <!-- RSI Setup Section (only visible for HILEGA scanners) -->
@@ -615,30 +717,23 @@
                             <p class="config-hint" id="hilegaRsiModeHint">ALMA Fixed: Use ALMA smoothing with custom fixed lengths (defaults: RSI=11, VWMA=21, TEMA=10)</p>
                         </div>
                     </div>
-
-                    <div class="scan-actions">
-                        <button class="btn btn-primary btn-lg pulse-glow" id="runScanBtn">
-                            <i class="fas fa-play"></i>
-                            <span>Run Scanner</span>
-                        </button>
-                    </div>
-
-                    <!-- Scan Progress -->
-                    <div class="scan-progress-wrap hidden" id="scanProgressWrap">
-                        <div class="progress-header">
-                            <span class="progress-label">Scanning...</span>
-                            <span class="progress-pct" id="scanProgressPct">0%</span>
-                        </div>
-                        <div class="progress-bar-track">
-                            <div class="progress-bar-fill" id="scanProgressBar"></div>
-                            <div class="progress-bar-glow"></div>
-                        </div>
-                        <p class="progress-detail" id="scanProgressDetail">Initializing scanner...</p>
-                    </div>
                 </div>
 
-                <!-- Live Diagnostics Panel (right side) -->
-                <div class="card terminal-card scanner-diag-card">
+                <!-- Scan Progress (moved outside config card) -->
+                <div class="scan-progress-wrap hidden" id="scanProgressWrap">
+                    <div class="progress-header">
+                        <span class="progress-label">Scanning...</span>
+                        <span class="progress-pct" id="scanProgressPct">0%</span>
+                    </div>
+                    <div class="progress-bar-track">
+                        <div class="progress-bar-fill" id="scanProgressBar"></div>
+                        <div class="progress-bar-glow"></div>
+                    </div>
+                    <p class="progress-detail" id="scanProgressDetail">Initializing scanner...</p>
+                </div>
+
+                <!-- Live Diagnostics Panel (below config) -->
+                <div class="card terminal-card modern-card full-width-card">
                     <div class="terminal-header">
                         <div class="terminal-dots">
                             <span class="dot red"></span>

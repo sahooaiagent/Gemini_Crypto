@@ -56,6 +56,187 @@ def calculate_tema(series, length):
     ema3 = ema2.ewm(span=length, adjust=False).mean()
     return 3 * ema1 - 3 * ema2 + ema3
 
+# =============================================================================
+# QWEN MULTI-MA FUNCTIONS (ALMA, JMA, T3, McGinley, KAMA)
+# =============================================================================
+
+def calculate_alma_ma(series, length, offset=0.85, sigma=6.0):
+    """
+    Arnaud Legoux Moving Average (ALMA)
+    Exact implementation matching TradingView's ta.alma
+
+    offset: Gaussian applied to offset (0=gaussian filter, 1=most recent)
+    sigma: Defines the sharpness of the gaussian curve
+
+    Formula:
+    m = offset * (length - 1)
+    s = length / sigma
+    wtd = exp(-1 * pow(i - m, 2) / (2 * pow(s, 2)))
+    sum = Σ(price[i] * wtd[i]) / Σ(wtd[i])
+    """
+    values = series.values
+    m = offset * (length - 1)
+    s = length / sigma
+
+    result = np.full(len(values), np.nan)
+
+    # Pre-calculate weights (they're the same for every window)
+    weights = np.array([np.exp(-((i - m) ** 2) / (2 * s * s)) for i in range(length)])
+
+    for i in range(length - 1, len(values)):
+        window = values[i - length + 1:i + 1]
+
+        # Handle NaN values
+        valid_mask = ~np.isnan(window)
+        if np.any(valid_mask):
+            valid_weights = weights[valid_mask]
+            valid_values = window[valid_mask]
+            result[i] = np.sum(valid_values * valid_weights) / np.sum(valid_weights)
+
+    return pd.Series(result, index=series.index)
+
+def calculate_jma(series, length, phase=0, power=2.0):
+    """
+    Jurik Moving Average (JMA)
+    Port from Pine Script jma_func
+
+    phase: -100 (lag) to +100 (lead), default 0
+    power: Smoothing aggressiveness, default 2.0
+    """
+    # Calculate phase ratio
+    if phase < -100:
+        phase_ratio = 0.5
+    elif phase > 100:
+        phase_ratio = 2.5
+    else:
+        phase_ratio = phase / 100.0 + 1.5
+
+    beta = 0.45 * (length - 1) / (0.45 * (length - 1) + 2)
+    alpha = np.power(beta, power)
+
+    # Initialize state variables
+    jma_values = np.zeros(len(series))
+    e0 = np.zeros(len(series))
+    e1 = np.zeros(len(series))
+    e2 = np.zeros(len(series))
+
+    src = series.values
+
+    for i in range(len(series)):
+        if i == 0:
+            e0[i] = src[i]
+            e1[i] = 0
+            e2[i] = 0
+            jma_values[i] = src[i]
+        else:
+            e0[i] = (1 - alpha) * src[i] + alpha * e0[i-1]
+            e1[i] = (src[i] - e0[i]) * (1 - beta) + beta * e1[i-1]
+            e2[i] = (e0[i] + phase_ratio * e1[i] - jma_values[i-1]) * np.power(1 - alpha, 2) + np.power(alpha, 2) * e2[i-1]
+            jma_values[i] = e2[i] + jma_values[i-1]
+
+    return pd.Series(jma_values, index=series.index)
+
+def calculate_t3(series, length, v_factor=0.7):
+    """
+    T3 Moving Average
+    Port from Pine Script t3_func
+
+    v_factor: 0 (responsive) to 1 (smooth), default 0.7
+    """
+    c1 = -(v_factor * v_factor * v_factor)
+    c2 = 3 * v_factor * v_factor + 3 * v_factor * v_factor * v_factor
+    c3 = -6 * v_factor * v_factor - 3 * v_factor - 3 * v_factor * v_factor * v_factor
+    c4 = 1 + 3 * v_factor + v_factor * v_factor * v_factor + 3 * v_factor * v_factor
+
+    e1 = series.ewm(span=length, adjust=False).mean()
+    e2 = e1.ewm(span=length, adjust=False).mean()
+    e3 = e2.ewm(span=length, adjust=False).mean()
+    e4 = e3.ewm(span=length, adjust=False).mean()
+    e5 = e4.ewm(span=length, adjust=False).mean()
+    e6 = e5.ewm(span=length, adjust=False).mean()
+
+    return c1 * e6 + c2 * e5 + c3 * e4 + c4 * e3
+
+def calculate_mcginley(series, length, k=0.6):
+    """
+    McGinley Dynamic
+    Port from Pine Script mgd_func
+
+    k: 0.4 (fast) to 1.0 (slow), default 0.6
+    """
+    mgd_values = np.zeros(len(series))
+    src = series.values
+
+    for i in range(len(series)):
+        if i == 0 or np.isnan(mgd_values[i-1]) or mgd_values[i-1] == 0:
+            mgd_values[i] = src[i]
+        else:
+            ratio = src[i] / mgd_values[i-1]
+            divisor = k * length * np.power(ratio, 4)
+            mgd_values[i] = mgd_values[i-1] + (src[i] - mgd_values[i-1]) / max(1, divisor)
+
+    return pd.Series(mgd_values, index=series.index)
+
+def calculate_kama(series, length, fast_end=2, slow_end=30):
+    """
+    Kaufman Adaptive Moving Average (KAMA)
+    Port from Pine Script kama_func
+
+    fast_end: Fast EMA period (trending), default 2
+    slow_end: Slow EMA period (ranging), default 30
+    """
+    fast_sc = 2.0 / (fast_end + 1)
+    slow_sc = 2.0 / (slow_end + 1)
+
+    src = series.values
+    kama_values = np.zeros(len(series))
+
+    for i in range(len(series)):
+        if i < length:
+            kama_values[i] = src[i]
+            continue
+
+        # Calculate efficiency ratio
+        direction = abs(src[i] - src[i - length])
+        volatility = sum(abs(src[i - j] - src[i - j - 1]) for j in range(length))
+
+        if volatility == 0:
+            er = 0
+        else:
+            er = direction / volatility
+
+        # Calculate smoothing constant
+        sc = np.power(er * (fast_sc - slow_sc) + slow_sc, 2)
+
+        # Calculate KAMA
+        if i == length or np.isnan(kama_values[i-1]):
+            kama_values[i] = src[i]
+        else:
+            kama_values[i] = kama_values[i-1] + sc * (src[i] - kama_values[i-1])
+
+    return pd.Series(kama_values, index=series.index)
+
+def calculate_wma(series, length):
+    """Weighted Moving Average — linearly-decaying weights."""
+    weights = np.arange(1, length + 1, dtype=float)
+    def _wma(x):
+        if len(x) < length or np.any(np.isnan(x)):
+            return np.nan
+        return np.dot(x[-length:], weights) / weights.sum()
+    return series.rolling(length).apply(_wma, raw=True)
+
+def calculate_hma(series, length):
+    """
+    Hull Moving Average (HMA) — Pine Script hma_func port.
+    hma(src, n) = WMA(2*WMA(src, n/2) - WMA(src, n), sqrt(n))
+    """
+    half    = max(2, round(length / 2))
+    sq_len  = max(2, round(np.sqrt(length)))
+    wma1 = calculate_wma(series, half)
+    wma2 = calculate_wma(series, length)
+    raw  = 2 * wma1 - wma2
+    return calculate_wma(raw, sq_len)
+
 def calculate_atr(high, low, close, length):
     """Average True Range using RMA (Wilder's smoothing)"""
     tr1 = high - low
@@ -676,6 +857,465 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
         return None, None, None, None, None, None, None
 
 # =============================================================================
+# QWEN MULTI-MA SCANNER — Supports ALMA, JMA, T3, McGinley, KAMA
+# =============================================================================
+
+def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle=False, **kwargs):
+    """
+    Qwen Multi-MA Scanner: Unified scanner supporting 5 MA types.
+    Uses the same AMA Pro adaptive system logic, but replaces TEMA with selected MA type.
+
+    Parameters:
+    - ma_type: "ALMA", "JMA", "T3", "McGinley", "KAMA"
+    - Other parameters same as apply_ama_pro_tema
+
+    Returns: (signal, crossover_angle, ma_gap_pct, rsi_value, open_value, close_value, signal_type, effective_type)
+    """
+    if df is None or len(df) < 200:
+        return None, None, None, None, None, None, None, None
+
+    if not use_current_candle:
+        df = df.iloc[:-1].copy()
+
+    if len(df) < 200:
+        return None, None, None, None, None, None, None, None
+
+    try:
+        # === PINE SCRIPT PARAMETERS (same as AMA PRO TEMA) ===
+        i_emaFastMin, i_emaFastMax = 8, 21
+        i_emaSlowMin, i_emaSlowMax = 21, 55
+        i_rsiMin, i_rsiMax = 10, 21
+        i_adxLength = 14
+        i_adxThreshold = 25
+        i_volLookback = 50
+
+        # User defined parameters
+        i_minBarsBetween = kwargs.get('min_bars_between', 3)
+        adaptation_speed = kwargs.get('adaptation_speed', 'Medium')
+
+        # Advanced filter toggles
+        enable_regime_filter = kwargs.get('enable_regime_filter', True)
+        enable_volume_filter = kwargs.get('enable_volume_filter', False)
+        enable_angle_filter = kwargs.get('enable_angle_filter', True)
+
+        # Sensitivity multiplier
+        sensitivity_mult = 1.5 if adaptation_speed == 'High' else 0.5 if adaptation_speed == 'Low' else 1.0
+
+        # =================================================================
+        # SECTION 6B: AUTO MA TYPE SELECTION (matching Pine Script)
+        # Asset type is always "Crypto" for Binance scanner.
+        # Effective type overrides ma_type when auto_type is True.
+        # =================================================================
+        auto_type = kwargs.get('auto_type', True)
+        if auto_type:
+            tf_clean_auto = tf_input.lower().strip()
+            if 'min' in tf_clean_auto:
+                try:
+                    tf_mins_auto = int(tf_clean_auto.replace('min', ''))
+                except Exception:
+                    tf_mins_auto = 15
+            elif 'hr' in tf_clean_auto:
+                try:
+                    tf_mins_auto = int(tf_clean_auto.replace('hr', '')) * 60
+                except Exception:
+                    tf_mins_auto = 60
+            elif 'week' in tf_clean_auto:
+                tf_mins_auto = 10080
+            else:
+                tf_mins_auto = 1440  # day or unknown → treat as daily
+
+            # Pine Script v2-3 Crypto auto-select matrix
+            if tf_mins_auto <= 5:
+                effective_type = "JMA"       # ultra-low lag for scalping
+            elif tf_mins_auto <= 15:
+                effective_type = "HMA"       # hull: fast + smooth for intraday
+            elif tf_mins_auto <= 60:
+                effective_type = "McGinley"  # self-adapts to crypto speed changes
+            elif tf_mins_auto <= 240:
+                effective_type = "T3"        # smooth trend on 1h-4h
+            else:
+                effective_type = "KAMA"      # adaptive for daily/weekly crypto
+        else:
+            effective_type = ma_type
+
+        # =================================================================
+        # SECTION 3: MARKET REGIME DETECTION (same as AMA PRO TEMA)
+        # =================================================================
+        df['ADX'] = calculate_adx(df['high'], df['low'], df['close'], i_adxLength)
+
+        # Volatility
+        df['ATR'] = calculate_atr(df['high'], df['low'], df['close'], 14)
+        df['returns'] = np.log(df['close'] / df['close'].shift(1))
+        df['volatility'] = df['returns'].rolling(window=i_volLookback).std(ddof=0) * np.sqrt(252) * 100
+        df['hist_vol'] = df['volatility'].rolling(window=i_volLookback).mean()
+        df['vol_ratio'] = (df['volatility'] / df['hist_vol'].replace(0, np.nan)).fillna(1.0)
+
+        # Trend alignment
+        df['ema20'] = calculate_ema(df['close'], 20)
+        df['ema50'] = calculate_ema(df['close'], 50)
+        df['ema200'] = calculate_ema(df['close'], 200)
+
+        # Rate of change for momentum
+        df['roc10'] = df['close'].pct_change(10) * 100
+        df['roc20'] = df['close'].pct_change(20) * 100
+        df['momentum'] = (df['roc10'] + df['roc20']) / 2
+
+        # Regime classification
+        df['volRegime'] = np.select(
+            [df['vol_ratio'] > 1.3, df['vol_ratio'] < 0.7],
+            ['High', 'Low'], default='Normal'
+        )
+        df['trendRegime'] = np.where(df['ADX'] > i_adxThreshold, 'Trending', 'Ranging')
+
+        trend_up = (df['close'] > df['ema20']) & (df['ema20'] > df['ema50']) & (df['ema50'] > df['ema200'])
+        trend_down = (df['close'] < df['ema20']) & (df['ema20'] < df['ema50']) & (df['ema50'] < df['ema200'])
+        df['trendAlignment'] = np.select([trend_up, trend_down], [1, -1], default=0)
+        df['directionRegime'] = np.select([trend_up, trend_down], ['Bullish', 'Bearish'], default='Neutral')
+
+        # Stable regime with confirmation counter
+        i_regimeStability = 3
+        stable_regime = "Neutral-Normal-Ranging"
+        regime_counter = 0
+
+        n_rows = len(df)
+        stable_bullish = np.zeros(n_rows, dtype=bool)
+        stable_bearish = np.zeros(n_rows, dtype=bool)
+        stable_high_vol = np.zeros(n_rows, dtype=bool)
+        stable_low_vol = np.zeros(n_rows, dtype=bool)
+        stable_trending = np.zeros(n_rows, dtype=bool)
+        stable_ranging = np.zeros(n_rows, dtype=bool)
+
+        dir_vals = df['directionRegime'].values
+        vol_vals = df['volRegime'].values
+        trend_vals = df['trendRegime'].values
+
+        for i in range(n_rows):
+            current_regime = f"{dir_vals[i]}-{vol_vals[i]}-{trend_vals[i]}"
+            if current_regime != stable_regime:
+                regime_counter += 1
+                if regime_counter >= i_regimeStability:
+                    stable_regime = current_regime
+                    regime_counter = 0
+                else:
+                    regime_counter = 0
+            else:
+                regime_counter = 0
+
+            stable_bullish[i] = "Bullish" in stable_regime
+            stable_bearish[i] = "Bearish" in stable_regime
+            stable_high_vol[i] = "High" in stable_regime
+            stable_low_vol[i] = "Low" in stable_regime
+            stable_trending[i] = "Trending" in stable_regime
+            stable_ranging[i] = "Ranging" in stable_regime
+
+        df['regimeIsBullish'] = stable_bullish
+        df['regimeIsBearish'] = stable_bearish
+        df['regimeIsHighVol'] = stable_high_vol
+        df['regimeIsLowVol'] = stable_low_vol
+        df['regimeIsTrending'] = stable_trending
+        df['regimeIsRanging'] = stable_ranging
+
+        # =================================================================
+        # SECTION 4: ADAPTIVE PARAMETERS (same calculation)
+        # =================================================================
+        vol_adjust = np.select(
+            [df['regimeIsHighVol'], df['regimeIsLowVol']],
+            [0.7, 1.3], default=1.0
+        )
+        trend_adjust = np.where(df['regimeIsTrending'], 0.8, 1.2)
+
+        # tfMultiplier logic
+        tf_clean = tf_input.lower().strip()
+        if 'min' in tf_clean:
+            try:
+                m = int(tf_clean.replace('min', ''))
+                tf_multiplier = 0.8 if m <= 5 else 1.0 if m <= 60 else 1.2
+            except: tf_multiplier = 1.0
+        elif 'hr' in tf_clean:
+            try:
+                h = int(tf_clean.replace('hr', ''))
+                minutes = h * 60
+                tf_multiplier = 1.0 if minutes <= 60 else 1.2
+            except: tf_multiplier = 1.0
+        elif 'day' in tf_clean:
+            tf_multiplier = 1.3
+        elif 'week' in tf_clean:
+            tf_multiplier = 1.5
+        else:
+            tf_multiplier = 1.0
+
+        combined_adjust = vol_adjust * trend_adjust * tf_multiplier * sensitivity_mult
+        adjust_factor = np.clip(1.0 / combined_adjust, 0.5, 1.5)
+
+        fast_range = i_emaFastMax - i_emaFastMin
+        slow_range = i_emaSlowMax - i_emaSlowMin
+
+        adaptive_fast = i_emaFastMin + fast_range * (1 - adjust_factor)
+        adaptive_slow = i_emaSlowMin + slow_range * (1 - adjust_factor)
+
+        # Ensure minimum separation
+        adaptive_slow = np.maximum(adaptive_slow, adaptive_fast + 6)
+
+        # =================================================================
+        # PRE-CALCULATE MA VALUES (periods 8-55)
+        # =================================================================
+        ma_periods_fast = list(range(8, 31))  # 8-30
+        ma_periods_slow = list(range(21, 56))  # 21-55
+
+        mas_fast = {}
+        mas_slow = {}
+
+        # MA-specific parameters (good defaults from Pine Script)
+        if effective_type == "ALMA":
+            for p in ma_periods_fast:
+                mas_fast[p] = calculate_alma_ma(df['close'], p, offset=0.85, sigma=6.0)
+            for p in ma_periods_slow:
+                mas_slow[p] = calculate_alma_ma(df['close'], p, offset=0.85, sigma=6.0)
+        elif effective_type == "JMA":
+            for p in ma_periods_fast:
+                mas_fast[p] = calculate_jma(df['close'], p, phase=0, power=2.0)
+            for p in ma_periods_slow:
+                mas_slow[p] = calculate_jma(df['close'], p, phase=0, power=2.0)
+        elif effective_type == "T3":
+            for p in ma_periods_fast:
+                mas_fast[p] = calculate_t3(df['close'], p, v_factor=0.7)
+            for p in ma_periods_slow:
+                mas_slow[p] = calculate_t3(df['close'], p, v_factor=0.7)
+        elif effective_type == "McGinley":
+            for p in ma_periods_fast:
+                mas_fast[p] = calculate_mcginley(df['close'], p, k=0.6)
+            for p in ma_periods_slow:
+                mas_slow[p] = calculate_mcginley(df['close'], p, k=0.6)
+        elif effective_type == "KAMA":
+            for p in ma_periods_fast:
+                mas_fast[p] = calculate_kama(df['close'], p, fast_end=2, slow_end=30)
+            for p in ma_periods_slow:
+                mas_slow[p] = calculate_kama(df['close'], p, fast_end=2, slow_end=30)
+        elif effective_type == "HMA":
+            for p in ma_periods_fast:
+                mas_fast[p] = calculate_hma(df['close'], p)
+            for p in ma_periods_slow:
+                mas_slow[p] = calculate_hma(df['close'], p)
+        else:
+            raise ValueError(f"Unknown MA type: {effective_type}")
+
+        # SELECT MA Fast (periods 8-30)
+        fast_conds = [adaptive_fast <= p for p in ma_periods_fast]
+        fast_vals = [mas_fast[p] for p in ma_periods_fast]
+        df['maFast'] = np.select(fast_conds, fast_vals, default=mas_fast[30])
+
+        # SELECT MA Slow (periods 21-55)
+        slow_conds = [adaptive_slow <= p for p in ma_periods_slow]
+        slow_vals = [mas_slow[p] for p in ma_periods_slow]
+        df['maSlow'] = np.select(slow_conds, slow_vals, default=mas_slow[55])
+
+        # RSI calculation (same as AMA PRO TEMA)
+        rsi_range = i_rsiMax - i_rsiMin
+        rsi_trend_factor = np.where(df['regimeIsTrending'], 0.7, 1.3)
+        rsi_vol_factor = np.where(df['regimeIsHighVol'], 0.8, 1.2)
+        adaptive_rsi = i_rsiMin + rsi_range * rsi_trend_factor * rsi_vol_factor * sensitivity_mult
+        adaptive_rsi = np.clip(adaptive_rsi, i_rsiMin, i_rsiMax)
+
+        rsi_periods = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+                       22, 23, 24, 25, 26, 27, 28, 29, 30, 35]
+        rsis = {p: calculate_rsi(df['close'], p) for p in rsi_periods}
+
+        rsi_conds = [adaptive_rsi <= p for p in range(7, 31)] + [adaptive_rsi <= 35]
+        rsi_vals_sel = [rsis[p] for p in range(7, 31)] + [rsis[35]]
+        df['rsi'] = np.select(rsi_conds, rsi_vals_sel, default=rsis[35])
+
+        # =================================================================
+        # SECTION 5: STRATEGY LOGIC — MA crossovers
+        # =================================================================
+        df['longCondition'] = (df['maFast'] > df['maSlow']) & (df['maFast'].shift(1) <= df['maSlow'].shift(1))
+        df['shortCondition'] = (df['maFast'] < df['maSlow']) & (df['maFast'].shift(1) >= df['maSlow'].shift(1))
+
+        # Angle Threshold Filter
+        angle_lookback = 3
+        fast_slope = (df['maFast'] - df['maFast'].shift(angle_lookback)) / angle_lookback
+        slow_slope = (df['maSlow'] - df['maSlow'].shift(angle_lookback)) / angle_lookback
+        slope_diff = fast_slope - slow_slope
+        df['crossAngle'] = np.abs(np.degrees(np.arctan(slope_diff * 100)))
+
+        # Determine timeframe-adaptive angle threshold
+        tf_clean_angle = tf_input.lower().strip()
+        if 'min' in tf_clean_angle:
+            try:
+                tf_minutes = int(tf_clean_angle.replace('min', ''))
+            except:
+                tf_minutes = 15
+        elif 'hr' in tf_clean_angle:
+            try:
+                tf_minutes = int(tf_clean_angle.replace('hr', '')) * 60
+            except:
+                tf_minutes = 60
+        elif 'day' in tf_clean_angle:
+            tf_minutes = 1440
+        else:
+            tf_minutes = 15
+
+        # Apply angle filter only if enabled
+        if enable_angle_filter:
+            angle_threshold = 3.0 if tf_minutes <= 15 else 5.0 if tf_minutes <= 30 else 10.0
+            angle_pass = df['crossAngle'] >= angle_threshold
+            df['longCondition'] = df['longCondition'] & angle_pass
+            df['shortCondition'] = df['shortCondition'] & angle_pass
+
+        # Apply volume filter only if enabled
+        if enable_volume_filter:
+            df['volumeMA'] = df['volume'].rolling(window=30).mean()
+            df['volumeSpike'] = df['volume'] > df['volumeMA'] * 1.3
+            df['longCondition'] = df['longCondition'] & df['volumeSpike']
+            df['shortCondition'] = df['shortCondition'] & df['volumeSpike']
+
+        # =================================================================
+        # SECTION 6: SIGNAL FILTERING — longValid / shortValid
+        # =================================================================
+        n = len(df)
+        bars_since_long = np.full(n, 999, dtype=int)
+        bars_since_short = np.full(n, 999, dtype=int)
+        long_valid = np.zeros(n, dtype=bool)
+        short_valid = np.zeros(n, dtype=bool)
+
+        long_cond = df['longCondition'].values
+        short_cond = df['shortCondition'].values
+        is_bullish = df['regimeIsBullish'].values if enable_regime_filter else np.zeros(n, dtype=bool)
+        is_bearish = df['regimeIsBearish'].values if enable_regime_filter else np.zeros(n, dtype=bool)
+        momentum_vals = df['momentum'].values
+
+        for i in range(1, n):
+            if long_cond[i]:
+                bars_since_long[i] = 0
+            else:
+                bars_since_long[i] = bars_since_long[i-1] + 1
+
+            if short_cond[i]:
+                bars_since_short[i] = 0
+            else:
+                bars_since_short[i] = bars_since_short[i-1] + 1
+
+            lv = long_cond[i] and (bars_since_long[i-1] >= i_minBarsBetween if i > 0 else True)
+            sv = short_cond[i] and (bars_since_short[i-1] >= i_minBarsBetween if i > 0 else True)
+
+            # Resolve conflicts
+            if lv and sv:
+                if is_bullish[i]:
+                    sv = False
+                elif is_bearish[i]:
+                    lv = False
+                else:
+                    if momentum_vals[i] > 0:
+                        sv = False
+                    else:
+                        lv = False
+
+            long_valid[i] = lv
+            short_valid[i] = sv
+
+        df['longValid'] = long_valid
+        df['shortValid'] = short_valid
+
+        # =================================================================
+        # BUY/SELL ENTRY SIGNAL DETECTION (same as AMA PRO TEMA)
+        # =================================================================
+        n = len(df)
+        pending_buy = np.zeros(n, dtype=bool)
+        pending_sell = np.zeros(n, dtype=bool)
+        buy_entry = np.zeros(n, dtype=bool)
+        sell_entry = np.zeros(n, dtype=bool)
+        pending_buy_high = np.full(n, np.nan)
+        pending_sell_low = np.full(n, np.nan)
+
+        long_cond = df['longCondition'].values
+        short_cond = df['shortCondition'].values
+        close_vals = df['close'].values
+        high_vals = df['high'].values
+        low_vals = df['low'].values
+
+        current_pending_buy = False
+        current_pending_sell = False
+        current_buy_high = np.nan
+        current_sell_low = np.nan
+
+        for i in range(1, n):
+            if long_cond[i]:
+                current_pending_buy = True
+                current_buy_high = close_vals[i]
+                current_pending_sell = False
+
+            if short_cond[i]:
+                current_pending_sell = True
+                current_sell_low = close_vals[i]
+                current_pending_buy = False
+
+            if current_pending_buy and not np.isnan(current_buy_high):
+                if close_vals[i] > current_buy_high:
+                    buy_entry[i] = True
+                    current_pending_buy = False
+
+            if current_pending_sell and not np.isnan(current_sell_low):
+                if close_vals[i] < current_sell_low:
+                    sell_entry[i] = True
+                    current_pending_sell = False
+
+            pending_buy[i] = current_pending_buy
+            pending_sell[i] = current_pending_sell
+            pending_buy_high[i] = current_buy_high
+            pending_sell_low[i] = current_sell_low
+
+        df['buyEntry'] = buy_entry
+        df['sellEntry'] = sell_entry
+        df['pendingBuy'] = pending_buy
+        df['pendingSell'] = pending_sell
+
+        # =================================================================
+        # SIGNAL CHECK — LATEST CLOSED CANDLE ONLY
+        # Matches TradingView plotshape: fires on ma_longCondition / ma_shortCondition
+        # (raw crossover with angle+volume filter applied).
+        # =================================================================
+        signal = None
+        crossover_angle = None
+        ma_gap_pct = None
+        signal_type = "CROSSOVER"
+
+        last_row = df.iloc[-1]
+        last_ts = df.index[-1]
+
+        if last_row['longCondition']:
+            signal = "LONG"
+        elif last_row['shortCondition']:
+            signal = "SHORT"
+
+        if signal:
+            logging.info(f"  >>> {signal} CROSSOVER ({effective_type}) on candle {last_ts}")
+
+            # Calculate MA gap percentage
+            fast_val = last_row['maFast']
+            slow_val = last_row['maSlow']
+            if slow_val != 0:
+                ma_gap_pct = round((fast_val - slow_val) / slow_val * 100, 3)
+
+            crossover_angle = round(float(last_row['crossAngle']), 2) if not np.isnan(last_row['crossAngle']) else 0.0
+
+            rsi_value = round(float(last_row['rsi']), 2) if 'rsi' in last_row and not np.isnan(last_row['rsi']) else None
+            open_value = round(float(last_row['open']), 8) if 'open' in last_row and not np.isnan(last_row['open']) else None
+            close_value = round(float(last_row['close']), 8) if 'close' in last_row and not np.isnan(last_row['close']) else None
+        else:
+            logging.info(f"  No signal ({effective_type}) on candle {last_ts}.")
+            rsi_value = None
+            open_value = None
+            close_value = None
+            signal_type = None
+
+        return signal, crossover_angle, ma_gap_pct, rsi_value, open_value, close_value, signal_type, effective_type
+
+    except Exception as e:
+        logging.error(f"Error in Qwen Multi-MA ({effective_type if 'effective_type' in dir() else ma_type}) calculation: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
+        return None, None, None, None, None, None, None, None
+
+# =============================================================================
 # MA QWEN LOGIC — Faithful Port of Pine Script
 # =============================================================================
 
@@ -903,15 +1543,19 @@ def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15mi
     else:
         tf_minutes = 15
 
-    # Determine higher timeframe (matching Pine Script logic)
-    if tf_minutes <= 20:
-        higher_tf_minutes = 60  # 1H
+    # Determine higher timeframe — exact match to Pine Script getHigherTF()
+    if tf_minutes <= 5:
+        higher_tf_minutes = 15    # 15min
+    elif tf_minutes <= 15:
+        higher_tf_minutes = 60    # 1H
     elif tf_minutes <= 30:
+        higher_tf_minutes = 240   # 4H
+    elif tf_minutes <= 60:
         higher_tf_minutes = 1440  # 1D
     elif tf_minutes <= 240:
-        higher_tf_minutes = 10080  # 1W
+        higher_tf_minutes = 10080 # 1W
     elif tf_minutes <= 2880:
-        higher_tf_minutes = 43200  # 1M
+        higher_tf_minutes = 43200 # 1M
     else:
         higher_tf_minutes = 129600  # 3M
 
@@ -942,7 +1586,7 @@ def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15mi
     rsi_lengths = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 24, 26, 28, 30, 35]
     rsis = {}
     for length in rsi_lengths:
-        rsis[length] = calculate_true_rsi(close, length=length)
+        rsis[length] = calculate_true_rsi_alma(close, length=length)  # ALMA sigma=5, matching Pine Script TrueRSI()
 
     # SELECT RSI based on rsi_len (matching Pine Script getRSI function)
     rsi_conditions = [rsi_len <= length for length in rsi_lengths]
@@ -1433,6 +2077,14 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     adaptation_speed = kwargs.get('adaptation_speed', 'Medium')
     min_bars_between = kwargs.get('min_bars_between', 3)
     scanner_type = kwargs.get('scanner_type', 'ama_pro')
+    ma_type = kwargs.get('ma_type', 'ALMA')  # MA type selection (ALMA, JMA, T3, McGinley, KAMA)
+    auto_ma_type = kwargs.get('auto_ma_type', True)  # Auto-select MA type based on timeframe
+
+    # Advanced filter toggles
+    enable_regime_filter = kwargs.get('enable_regime_filter', True)
+    enable_volume_filter = kwargs.get('enable_volume_filter', False)
+    enable_angle_filter = kwargs.get('enable_angle_filter', True)
+
     hilega_buy_rsi = kwargs.get('hilega_buy_rsi', 10)
     hilega_sell_rsi = kwargs.get('hilega_sell_rsi', 90)
     hilega_rsi_mode = kwargs.get('hilega_rsi_mode', 'ALMA Fixed')
@@ -1473,19 +2125,39 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 ama_signal = None
                 qwen_signal = None
 
-                # Run AMA Pro scanner
+                # Run AMA Pro scanner (route based on MA type)
                 if run_ama and len(df) >= 200:
-                    signal, angle, tema_gap, rsi, open_val, close_val, sig_type = await loop.run_in_executor(
-                        executor,
-                        lambda tf=tf: apply_ama_pro_tema(
-                            df.copy(),
-                            tf_input=tf,
-                            adaptation_speed=adaptation_speed,
-                            min_bars_between=min_bars_between
+                    # If MA type is ALMA, use the new Qwen Multi-MA scanner (true ALMA implementation)
+                    # Otherwise, use Qwen Multi-MA for JMA, T3, McGinley, KAMA
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
+                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
+                                df.copy(),
+                                ma_type=ma,
+                                tf_input=tf,
+                                adaptation_speed=adaptation_speed,
+                                min_bars_between=min_bars_between,
+                                enable_regime_filter=reg,
+                                enable_volume_filter=vol,
+                                enable_angle_filter=ang,
+                                auto_type=auto_ma_type
+                            )
                         )
-                    )
+                    else:
+                        # Fallback to original TEMA scanner (should not happen with proper UI)
+                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf: apply_ama_pro_tema(
+                                df.copy(),
+                                tf_input=tf,
+                                adaptation_speed=adaptation_speed,
+                                min_bars_between=min_bars_between
+                            )
+                        )
+                        used_ma = 'TEMA'
                     if signal:
-                        ama_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type)
+                        ama_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma)
 
                 # Run Qwen scanner
                 if run_qwen and len(df) >= 100:
@@ -1499,21 +2171,39 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     if signal_q:
                         qwen_signal = (signal_q, rsi_q, open_val_q, close_val_q)
 
-                # Run AMA Pro Now scanner (current/forming candle)
+                # Run AMA Pro Now scanner (current/forming candle) - route based on MA type
                 ama_now_signal = None
                 if run_ama_now and len(df) >= 200:
-                    signal, angle, tema_gap, rsi, open_val, close_val, sig_type = await loop.run_in_executor(
-                        executor,
-                        lambda tf=tf: apply_ama_pro_tema(
-                            df.copy(),
-                            tf_input=tf,
-                            use_current_candle=True,
-                            adaptation_speed=adaptation_speed,
-                            min_bars_between=min_bars_between
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
+                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
+                                df.copy(),
+                                ma_type=ma,
+                                tf_input=tf,
+                                use_current_candle=True,
+                                adaptation_speed=adaptation_speed,
+                                min_bars_between=min_bars_between,
+                                enable_regime_filter=reg,
+                                enable_volume_filter=vol,
+                                enable_angle_filter=ang,
+                                auto_type=auto_ma_type
+                            )
                         )
-                    )
+                    else:
+                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf: apply_ama_pro_tema(
+                                df.copy(),
+                                tf_input=tf,
+                                use_current_candle=True,
+                                adaptation_speed=adaptation_speed,
+                                min_bars_between=min_bars_between
+                            )
+                        )
+                        used_ma_now = 'TEMA'
                     if signal:
-                        ama_now_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type)
+                        ama_now_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now)
 
                 # Run Qwen Now scanner (current/forming candle)
                 qwen_now_signal = None
@@ -1530,7 +2220,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         qwen_now_signal = (signal_q, rsi_q, open_val_q, close_val_q)
 
                 # ── Helper to append a result row ──
-                def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None, open_val=None, close_val=None, sig_type=None):
+                def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None, open_val=None, close_val=None, sig_type=None, ma_type_used=None):
                     # Determine color based on Open vs Close
                     color = "N/A"
                     if open_val is not None and close_val is not None:
@@ -1540,14 +2230,6 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             color = "RED"
                         else:
                             color = "NEUTRAL"
-
-                    # Append signal type to scanner label if it's an ENTRY signal
-                    if sig_type == "ENTRY":
-                        # Make it clear this is from a previous candle confirmation
-                        if "Now" in scanner_label:
-                            scanner_label = f"{scanner_label} (Entry)"
-                        else:
-                            scanner_label = f"{scanner_label} Previous (Entry)"
 
                     results_list.append({
                         'Crypto Name': symbol,
@@ -1560,42 +2242,47 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         'Scanner': scanner_label,
                         'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         'Color': color,
-                        'Signal Type': sig_type or 'CROSSOVER'
+                        'Signal Type': sig_type or 'CROSSOVER',
+                        'MA Type': ma_type_used or '—'
                     })
 
-                # ── Build results for closed-candle scanners (AMA Pro / Qwen) ──
+                # ── Build results for closed-candle scanners (AMA Pro Pre = previous candle) ──
+                ama_label = 'AMA Pro Pre'
+
                 if run_ama and run_qwen:
                     # "Both" or "All" mode for closed-candle pair
                     if ama_signal and qwen_signal:
                         if ama_signal[0] == qwen_signal[0]:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Both', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6])
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Both', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7])
                         else:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6])
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7])
                             add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
                     elif ama_signal:
-                        add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6])
+                        add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7])
                     elif qwen_signal:
                         add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
                 elif run_ama and ama_signal:
-                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6])
+                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7])
                 elif run_qwen and qwen_signal:
                     add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
 
                 # ── Build results for current-candle scanners (AMA Pro Now / Qwen Now) ──
+                ama_now_label = 'AMA Pro Now'
+
                 if run_ama_now and run_qwen_now:
                     # "Both Now" or "All" mode for current-candle pair
                     if ama_now_signal and qwen_now_signal:
                         if ama_now_signal[0] == qwen_now_signal[0]:
-                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'Both Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6])
+                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'Both Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
                         else:
-                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6])
+                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
                             add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
                     elif ama_now_signal:
-                        add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6])
+                        add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
                     elif qwen_now_signal:
                         add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
                 elif run_ama_now and ama_now_signal:
-                    add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'AMA Pro Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6])
+                    add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
                 elif run_qwen_now and qwen_now_signal:
                     add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
 
