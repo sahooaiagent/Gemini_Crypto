@@ -1286,15 +1286,13 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
         last_row = df.iloc[-1]
         last_ts = df.index[-1]
 
-        if conflict_type and len(df) >= 2:
-            # Raw MA crossover — no angle filter — just maFast crosses maSlow
-            prev_row = df.iloc[-2]
-            raw_long  = (last_row['maFast'] > last_row['maSlow']) and (prev_row['maFast'] <= prev_row['maSlow'])
-            raw_short = (last_row['maFast'] < last_row['maSlow']) and (prev_row['maFast'] >= prev_row['maSlow'])
-            if conflict_type == 'long' and raw_long and last_row['close'] < last_row['open']:
+        if conflict_type:
+            # Use same longCondition/shortCondition as normal signals (angle filter applied,
+            # matching TradingView Pine Script Section 16), then check candle direction.
+            if conflict_type == 'long' and last_row['longCondition'] and last_row['close'] < last_row['open']:
                 signal = "LONG"
                 signal_type = "CONFLICT_LONG"
-            elif conflict_type == 'short' and raw_short and last_row['close'] > last_row['open']:
+            elif conflict_type == 'short' and last_row['shortCondition'] and last_row['close'] > last_row['open']:
                 signal = "SHORT"
                 signal_type = "CONFLICT_SHORT"
         else:
