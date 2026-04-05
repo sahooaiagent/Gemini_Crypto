@@ -249,13 +249,23 @@ def calculate_zlema(series, length):
 def calculate_gaussian(series, length, sigma=2.0):
     """
     Gaussian-weighted MA — Pine Script gaussian_func port.
-    Weights: exp(-((i - half)^2) / (2 * sigma^2))  for i in 0..length-1
+
+    Pine Script index: src[i] where i=0 is CURRENT (newest) bar, i=length-1 is oldest.
+    Pine weight at index i: exp(-((i - half)^2) / (2 * sigma^2))
+
+    Python window (oldest → newest): window[0]=oldest, window[length-1]=newest.
+    window[j] = Pine's src[length-1-j]
+    → Python weight for window[j] = Pine weight at i=(length-1-j)
+    → Reverse Pine's weight array before dotting with the window.
     """
     half = length / 2.0
-    weights = np.array([
+    # Build weights in Pine's order (i=0=newest, i=length-1=oldest)
+    pine_weights = np.array([
         np.exp(-((i - half) ** 2) / (2.0 * sigma * sigma))
         for i in range(length)
     ], dtype=float)
+    # Reverse so index 0 aligns with oldest bar in the Python window
+    weights = pine_weights[::-1].copy()
     w_sum = weights.sum()
     if w_sum > 0:
         weights /= w_sum
@@ -1361,13 +1371,14 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
             close_value = None
             signal_type = None
 
-        return signal, crossover_angle, ma_gap_pct, rsi_value, open_value, close_value, signal_type, effective_type
+        candle_ts = last_ts.strftime("%Y-%m-%d %H:%M:%S") if hasattr(last_ts, 'strftime') else str(last_ts)
+        return signal, crossover_angle, ma_gap_pct, rsi_value, open_value, close_value, signal_type, effective_type, candle_ts
 
     except Exception as e:
         logging.error(f"Error in Qwen Multi-MA ({effective_type if 'effective_type' in dir() else ma_type}) calculation: {str(e)}")
         import traceback
         logging.error(traceback.format_exc())
-        return None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None
 
 # =============================================================================
 # MA QWEN LOGIC — Faithful Port of Pine Script
@@ -2188,7 +2199,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     # If MA type is ALMA, use the new Qwen Multi-MA scanner (true ALMA implementation)
                     # Otherwise, use Qwen Multi-MA for JMA, T3, McGinley, HMA, ZLEMA, Gaussian
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma = await loop.run_in_executor(
+                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma, cts = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
                                 df.copy(),
@@ -2214,8 +2225,9 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             )
                         )
                         used_ma = 'TEMA'
+                        cts = None
                     if signal:
-                        ama_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma)
+                        ama_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma, cts)
 
                 # Run Qwen scanner
                 if run_qwen and len(df) >= 100:
@@ -2233,7 +2245,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 ama_now_signal = None
                 if run_ama_now and len(df) >= 200:
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now = await loop.run_in_executor(
+                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now, cts_now = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
                                 df.copy(),
@@ -2260,8 +2272,9 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             )
                         )
                         used_ma_now = 'TEMA'
+                        cts_now = None
                     if signal:
-                        ama_now_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now)
+                        ama_now_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now, cts_now)
 
                 # Run Qwen Now scanner (current/forming candle)
                 qwen_now_signal = None
@@ -2278,7 +2291,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         qwen_now_signal = (signal_q, rsi_q, open_val_q, close_val_q)
 
                 # ── Helper to append a result row ──
-                def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None, open_val=None, close_val=None, sig_type=None, ma_type_used=None):
+                def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None, open_val=None, close_val=None, sig_type=None, ma_type_used=None, candle_ts=None):
                     # Determine color based on Open vs Close
                     color = "N/A"
                     if open_val is not None and close_val is not None:
@@ -2298,7 +2311,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
                         'Daily Change': daily_change,
                         'Scanner': scanner_label,
-                        'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        'Timestamp': candle_ts if candle_ts else datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         'Color': color,
                         'Signal Type': sig_type or 'CROSSOVER',
                         'MA Type': ma_type_used or '—'
@@ -2311,16 +2324,16 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     # "Both" or "All" mode for closed-candle pair
                     if ama_signal and qwen_signal:
                         if ama_signal[0] == qwen_signal[0]:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Both', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7])
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Both', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
                         else:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7])
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
                             add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
                     elif ama_signal:
-                        add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7])
+                        add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
                     elif qwen_signal:
                         add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
                 elif run_ama and ama_signal:
-                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7])
+                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
                 elif run_qwen and qwen_signal:
                     add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
 
@@ -2331,16 +2344,16 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     # "Both Now" or "All" mode for current-candle pair
                     if ama_now_signal and qwen_now_signal:
                         if ama_now_signal[0] == qwen_now_signal[0]:
-                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'Both Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
+                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'Both Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7], candle_ts=ama_now_signal[8])
                         else:
-                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
+                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7], candle_ts=ama_now_signal[8])
                             add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
                     elif ama_now_signal:
-                        add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
+                        add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7], candle_ts=ama_now_signal[8])
                     elif qwen_now_signal:
                         add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
                 elif run_ama_now and ama_now_signal:
-                    add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
+                    add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7], candle_ts=ama_now_signal[8])
                 elif run_qwen_now and qwen_now_signal:
                     add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
 
@@ -2351,7 +2364,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 # (bypasses angle filter so near-threshold crossovers are NOT missed)
                 if run_conflict_long and len(df) >= 200:
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        cl_signal, cl_angle, cl_gap, cl_rsi, cl_open, cl_close, cl_sig_type, cl_used_ma = await loop.run_in_executor(
+                        cl_signal, cl_angle, cl_gap, cl_rsi, cl_open, cl_close, cl_sig_type, cl_used_ma, cl_cts = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
                                 df.copy(),
@@ -2368,11 +2381,11 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         )
                         if cl_signal:
                             add_result(cl_signal, cl_angle, cl_gap, 'Long Conflict',
-                                       cl_rsi, cl_open, cl_close, cl_sig_type, ma_type_used=cl_used_ma)
+                                       cl_rsi, cl_open, cl_close, cl_sig_type, ma_type_used=cl_used_ma, candle_ts=cl_cts)
 
                 if run_conflict_short and len(df) >= 200:
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        cs_signal, cs_angle, cs_gap, cs_rsi, cs_open, cs_close, cs_sig_type, cs_used_ma = await loop.run_in_executor(
+                        cs_signal, cs_angle, cs_gap, cs_rsi, cs_open, cs_close, cs_sig_type, cs_used_ma, cs_cts = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
                                 df.copy(),
@@ -2389,7 +2402,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         )
                         if cs_signal:
                             add_result(cs_signal, cs_angle, cs_gap, 'Short Conflict',
-                                       cs_rsi, cs_open, cs_close, cs_sig_type, ma_type_used=cs_used_ma)
+                                       cs_rsi, cs_open, cs_close, cs_sig_type, ma_type_used=cs_used_ma, candle_ts=cs_cts)
 
                 # ── HILEGA SCANNER LOGIC ──
                 # HILEGA uses a different result structure and is mutually exclusive with AMA/Qwen
