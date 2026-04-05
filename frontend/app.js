@@ -250,6 +250,8 @@ function renderResults() {
             'Qwen Now': 'scanner-qwen-now',
             'Both Now': 'scanner-both-now',
             'Both Pre': 'scanner-both-entry',
+            'Long Conflict': 'scanner-conflict-long',
+            'Short Conflict': 'scanner-conflict-short',
             'Qwen Pre': 'scanner-qwen-entry',
             'Qwen Now (Entry)': 'scanner-qwen-now-entry'
         };
@@ -528,7 +530,7 @@ function initScannerControls() {
             const scannerType = chip.dataset.scanner;
             const hilegaScanners = ['hilega_buy', 'hilega_sell'];
             const crossScanners = ['rsi_cross_up_vwma', 'rsi_cross_dn_vwma'];
-            const amaScanners = ['ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now', 'both_now', 'all'];
+            const amaScanners = ['ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now', 'both_now', 'all', 'conflict_long', 'conflict_short'];
 
             // Check if clicking a HILEGA scanner
             if (hilegaScanners.includes(scannerType)) {
@@ -788,7 +790,7 @@ async function runScan() {
     updateStats();
 
     // Add scan start log
-    const scannerLabels = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners' };
+    const scannerLabels = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict' };
     const scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabels[s] || s).join(' + ') : (scannerLabels[selectedScanners[0]] || selectedScanners[0]));
     addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Scanner: ${scannerLabel} | MA: ${ma_type} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
 

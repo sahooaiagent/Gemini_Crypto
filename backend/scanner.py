@@ -2103,6 +2103,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_hilega_sell = 'hilega_sell' in scanner_type or 'all' in scanner_type
         run_cross_up = 'rsi_cross_up_vwma' in scanner_type or 'all' in scanner_type
         run_cross_down = 'rsi_cross_dn_vwma' in scanner_type or 'all' in scanner_type
+        run_conflict_long = 'conflict_long' in scanner_type or 'all' in scanner_type
+        run_conflict_short = 'conflict_short' in scanner_type or 'all' in scanner_type
     else:
         # Single scanner type (original logic)
         run_ama = scanner_type in ('ama_pro', 'both', 'all')
@@ -2113,6 +2115,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_hilega_sell = scanner_type in ('hilega_sell', 'all')
         run_cross_up = scanner_type in ('rsi_cross_up_vwma', 'all')
         run_cross_down = scanner_type in ('rsi_cross_dn_vwma', 'all')
+        run_conflict_long = scanner_type in ('conflict_long', 'all')
+        run_conflict_short = scanner_type in ('conflict_short', 'all')
 
     async with semaphore:
         for tf in timeframes:
@@ -2126,7 +2130,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 qwen_signal = None
 
                 # Run AMA Pro scanner (route based on MA type)
-                if run_ama and len(df) >= 200:
+                # Also triggered by conflict scanners since they reuse the same computation
+                if (run_ama or run_conflict_long or run_conflict_short) and len(df) >= 200:
                     # If MA type is ALMA, use the new Qwen Multi-MA scanner (true ALMA implementation)
                     # Otherwise, use Qwen Multi-MA for JMA, T3, McGinley, KAMA
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
@@ -2285,6 +2290,21 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7])
                 elif run_qwen_now and qwen_now_signal:
                     add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
+
+                # ── CONFLICT CANDLE DETECTION ──
+                # Long Conflict : longCondition fires (LONG signal) but candle is bearish (close < open)
+                # Short Conflict: shortCondition fires (SHORT signal) but candle is bullish (close > open)
+                # Reuses ama_signal — no extra computation needed.
+                if ama_signal and (run_conflict_long or run_conflict_short):
+                    open_v  = ama_signal[4]
+                    close_v = ama_signal[5]
+                    if open_v is not None and close_v is not None:
+                        if run_conflict_long and ama_signal[0] == "LONG" and close_v < open_v:
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Long Conflict',
+                                       ama_signal[3], open_v, close_v, ama_signal[6], ma_type_used=ama_signal[7])
+                        if run_conflict_short and ama_signal[0] == "SHORT" and close_v > open_v:
+                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Short Conflict',
+                                       ama_signal[3], open_v, close_v, ama_signal[6], ma_type_used=ama_signal[7])
 
                 # ── HILEGA SCANNER LOGIC ──
                 # HILEGA uses a different result structure and is mutually exclusive with AMA/Qwen

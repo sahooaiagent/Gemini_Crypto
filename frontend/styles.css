@@ -1731,6 +1731,26 @@ tbody tr:hover {
     border: 1px dashed rgba(255, 255, 255, 0.5);
 }
 
+.scanner-badge.scanner-conflict-long {
+    background: #00bcd4;
+    border: 2px solid #ff5722;
+}
+
+.scanner-badge.scanner-conflict-short {
+    background: #ff9800;
+    border: 2px solid #2196f3;
+}
+
+[data-theme="light"] .scanner-badge.scanner-conflict-long {
+    background: #006064;
+    color: #fff;
+}
+
+[data-theme="light"] .scanner-badge.scanner-conflict-short {
+    background: #e65100;
+    color: #fff;
+}
+
 .scan-actions {
     margin-top: 32px;
     display: flex;
