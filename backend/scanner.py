@@ -1272,7 +1272,12 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
         # SIGNAL CHECK — LATEST CLOSED CANDLE ONLY
         # Matches TradingView plotshape: fires on ma_longCondition / ma_shortCondition
         # (raw crossover with angle+volume filter applied).
+        #
+        # conflict_type kwarg: 'long' or 'short'
+        #   — bypasses angle filter, uses raw MA crossover + candle direction check
         # =================================================================
+        conflict_type = kwargs.get('conflict_type', None)
+
         signal = None
         crossover_angle = None
         ma_gap_pct = None
@@ -1281,10 +1286,22 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
         last_row = df.iloc[-1]
         last_ts = df.index[-1]
 
-        if last_row['longCondition']:
-            signal = "LONG"
-        elif last_row['shortCondition']:
-            signal = "SHORT"
+        if conflict_type and len(df) >= 2:
+            # Raw MA crossover — no angle filter — just maFast crosses maSlow
+            prev_row = df.iloc[-2]
+            raw_long  = (last_row['maFast'] > last_row['maSlow']) and (prev_row['maFast'] <= prev_row['maSlow'])
+            raw_short = (last_row['maFast'] < last_row['maSlow']) and (prev_row['maFast'] >= prev_row['maSlow'])
+            if conflict_type == 'long' and raw_long and last_row['close'] < last_row['open']:
+                signal = "LONG"
+                signal_type = "CONFLICT_LONG"
+            elif conflict_type == 'short' and raw_short and last_row['close'] > last_row['open']:
+                signal = "SHORT"
+                signal_type = "CONFLICT_SHORT"
+        else:
+            if last_row['longCondition']:
+                signal = "LONG"
+            elif last_row['shortCondition']:
+                signal = "SHORT"
 
         if signal:
             logging.info(f"  >>> {signal} CROSSOVER ({effective_type}) on candle {last_ts}")
@@ -2130,8 +2147,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 qwen_signal = None
 
                 # Run AMA Pro scanner (route based on MA type)
-                # Also triggered by conflict scanners since they reuse the same computation
-                if (run_ama or run_conflict_long or run_conflict_short) and len(df) >= 200:
+                if run_ama and len(df) >= 200:
                     # If MA type is ALMA, use the new Qwen Multi-MA scanner (true ALMA implementation)
                     # Otherwise, use Qwen Multi-MA for JMA, T3, McGinley, KAMA
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
@@ -2292,19 +2308,51 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
 
                 # ── CONFLICT CANDLE DETECTION ──
-                # Long Conflict : longCondition fires (LONG signal) but candle is bearish (close < open)
-                # Short Conflict: shortCondition fires (SHORT signal) but candle is bullish (close > open)
-                # Reuses ama_signal — no extra computation needed.
-                if ama_signal and (run_conflict_long or run_conflict_short):
-                    open_v  = ama_signal[4]
-                    close_v = ama_signal[5]
-                    if open_v is not None and close_v is not None:
-                        if run_conflict_long and ama_signal[0] == "LONG" and close_v < open_v:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Long Conflict',
-                                       ama_signal[3], open_v, close_v, ama_signal[6], ma_type_used=ama_signal[7])
-                        if run_conflict_short and ama_signal[0] == "SHORT" and close_v > open_v:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Short Conflict',
-                                       ama_signal[3], open_v, close_v, ama_signal[6], ma_type_used=ama_signal[7])
+                # Long Conflict : raw MA crossover bullish + candle is bearish (close < open)
+                # Short Conflict: raw MA crossover bearish + candle is bullish (close > open)
+                # Uses separate apply_qwen_multi_ma calls with conflict_type kwarg
+                # (bypasses angle filter so near-threshold crossovers are NOT missed)
+                if run_conflict_long and len(df) >= 200:
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
+                        cl_signal, cl_angle, cl_gap, cl_rsi, cl_open, cl_close, cl_sig_type, cl_used_ma = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
+                                df.copy(),
+                                ma_type=ma,
+                                tf_input=tf,
+                                adaptation_speed=adaptation_speed,
+                                min_bars_between=min_bars_between,
+                                enable_regime_filter=enable_regime_filter,
+                                enable_volume_filter=enable_volume_filter,
+                                enable_angle_filter=enable_angle_filter,
+                                auto_type=auto_ma_type,
+                                conflict_type='long'
+                            )
+                        )
+                        if cl_signal:
+                            add_result(cl_signal, cl_angle, cl_gap, 'Long Conflict',
+                                       cl_rsi, cl_open, cl_close, cl_sig_type, ma_type_used=cl_used_ma)
+
+                if run_conflict_short and len(df) >= 200:
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
+                        cs_signal, cs_angle, cs_gap, cs_rsi, cs_open, cs_close, cs_sig_type, cs_used_ma = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
+                                df.copy(),
+                                ma_type=ma,
+                                tf_input=tf,
+                                adaptation_speed=adaptation_speed,
+                                min_bars_between=min_bars_between,
+                                enable_regime_filter=enable_regime_filter,
+                                enable_volume_filter=enable_volume_filter,
+                                enable_angle_filter=enable_angle_filter,
+                                auto_type=auto_ma_type,
+                                conflict_type='short'
+                            )
+                        )
+                        if cs_signal:
+                            add_result(cs_signal, cs_angle, cs_gap, 'Short Conflict',
+                                       cs_rsi, cs_open, cs_close, cs_sig_type, ma_type_used=cs_used_ma)
 
                 # ── HILEGA SCANNER LOGIC ──
                 # HILEGA uses a different result structure and is mutually exclusive with AMA/Qwen
