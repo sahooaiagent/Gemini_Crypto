@@ -237,6 +237,36 @@ def calculate_hma(series, length):
     raw  = 2 * wma1 - wma2
     return calculate_wma(raw, sq_len)
 
+def calculate_zlema(series, length):
+    """
+    Zero-Lag EMA — Pine Script zlema_func port.
+    zlema(src, n) = EMA(src + (src - src[lag]), n)  where lag = round((n-1)/2)
+    """
+    lag = round((length - 1) / 2)
+    adjusted = series + (series - series.shift(lag))
+    return calculate_ema(adjusted, length)
+
+def calculate_gaussian(series, length, sigma=2.0):
+    """
+    Gaussian-weighted MA — Pine Script gaussian_func port.
+    Weights: exp(-((i - half)^2) / (2 * sigma^2))  for i in 0..length-1
+    """
+    half = length / 2.0
+    weights = np.array([
+        np.exp(-((i - half) ** 2) / (2.0 * sigma * sigma))
+        for i in range(length)
+    ], dtype=float)
+    w_sum = weights.sum()
+    if w_sum > 0:
+        weights /= w_sum
+
+    result = np.full(len(series), np.nan)
+    vals = series.values
+    for i in range(length - 1, len(vals)):
+        window = vals[i - length + 1: i + 1]
+        result[i] = np.dot(window, weights)
+    return pd.Series(result, index=series.index)
+
 def calculate_atr(high, low, close, length):
     """Average True Range using RMA (Wilder's smoothing)"""
     tr1 = high - low
@@ -924,17 +954,16 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
             else:
                 tf_mins_auto = 1440  # day or unknown → treat as daily
 
-            # Pine Script v2-3 Crypto auto-select matrix
-            if tf_mins_auto <= 5:
-                effective_type = "JMA"       # ultra-low lag for scalping
-            elif tf_mins_auto <= 15:
-                effective_type = "HMA"       # hull: fast + smooth for intraday
+            # Qwen MMA Pine Script Crypto auto-select (Section 6B)
+            # Matches: ALMA/JMA/T3/McGinley/HMA/ZLEMA/Gaussian
+            if tf_mins_auto <= 30:
+                effective_type = "JMA"        # ultra-low lag for scalping up to 30m
             elif tf_mins_auto <= 60:
-                effective_type = "McGinley"  # self-adapts to crypto speed changes
+                effective_type = "McGinley"   # self-adapts to crypto speed changes
             elif tf_mins_auto <= 240:
-                effective_type = "T3"        # smooth trend on 1h-4h
+                effective_type = "T3"         # smooth trend on 1h-4h
             else:
-                effective_type = "KAMA"      # adaptive for daily/weekly crypto
+                effective_type = "Gaussian"   # smooth out daily/weekly noise
         else:
             effective_type = ma_type
 
@@ -1096,6 +1125,16 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
                 mas_fast[p] = calculate_hma(df['close'], p)
             for p in ma_periods_slow:
                 mas_slow[p] = calculate_hma(df['close'], p)
+        elif effective_type == "ZLEMA":
+            for p in ma_periods_fast:
+                mas_fast[p] = calculate_zlema(df['close'], p)
+            for p in ma_periods_slow:
+                mas_slow[p] = calculate_zlema(df['close'], p)
+        elif effective_type == "Gaussian":
+            for p in ma_periods_fast:
+                mas_fast[p] = calculate_gaussian(df['close'], p, sigma=2.0)
+            for p in ma_periods_slow:
+                mas_slow[p] = calculate_gaussian(df['close'], p, sigma=2.0)
         else:
             raise ValueError(f"Unknown MA type: {effective_type}")
 
@@ -2147,8 +2186,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 # Run AMA Pro scanner (route based on MA type)
                 if run_ama and len(df) >= 200:
                     # If MA type is ALMA, use the new Qwen Multi-MA scanner (true ALMA implementation)
-                    # Otherwise, use Qwen Multi-MA for JMA, T3, McGinley, KAMA
-                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
+                    # Otherwise, use Qwen Multi-MA for JMA, T3, McGinley, HMA, ZLEMA, Gaussian
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
                         signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
@@ -2193,7 +2232,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 # Run AMA Pro Now scanner (current/forming candle) - route based on MA type
                 ama_now_signal = None
                 if run_ama_now and len(df) >= 200:
-                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
                         signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
@@ -2311,7 +2350,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 # Uses separate apply_qwen_multi_ma calls with conflict_type kwarg
                 # (bypasses angle filter so near-threshold crossovers are NOT missed)
                 if run_conflict_long and len(df) >= 200:
-                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
                         cl_signal, cl_angle, cl_gap, cl_rsi, cl_open, cl_close, cl_sig_type, cl_used_ma = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
@@ -2332,7 +2371,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                        cl_rsi, cl_open, cl_close, cl_sig_type, ma_type_used=cl_used_ma)
 
                 if run_conflict_short and len(df) >= 200:
-                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA']:
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
                         cs_signal, cs_angle, cs_gap, cs_rsi, cs_open, cs_close, cs_sig_type, cs_used_ma = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
