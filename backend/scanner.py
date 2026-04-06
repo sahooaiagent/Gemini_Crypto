@@ -897,6 +897,183 @@ def apply_ama_pro_tema(df, tf_input="1 day", use_current_candle=False, **kwargs)
         return None, None, None, None, None, None, None
 
 # =============================================================================
+# CONFLICT CANDLE HELPER FUNCTIONS (Section 16 — new Pine Script)
+# =============================================================================
+
+def _classify_conflict_state(df, row_idx, is_long_conflict, tf_minutes):
+    """
+    Classifies a conflict candle into one of:
+    SAFE, WAIT, WAIT?, SKIP-CRASH, SKIP-TREND, SKIP-SK2, SKIP-RANGE, SKIP-X, FLIP
+
+    Requires df to have these columns: ATR, ADX, ema20, rsi, vol_ma30, bb_basis20, maFast,
+    close, open, high, low, volume.
+
+    row_idx: row index in df (e.g., -1 for last row, -2 for second-to-last)
+    is_long_conflict: True for Long Conflict, False for Short Conflict
+    tf_minutes: timeframe in minutes (affects body_thr)
+    """
+    row = df.iloc[row_idx]
+    actual_idx = len(df) + row_idx if row_idx < 0 else row_idx
+
+    atr_safe = max(float(row['ATR']), 1e-10)
+
+    # Body threshold scales with timeframe (Pine Script Section 16)
+    if tf_minutes <= 15:
+        body_thr = 0.30
+    elif tf_minutes <= 30:
+        body_thr = 0.35
+    else:
+        body_thr = 0.40
+
+    body_ratio = abs(float(row['close']) - float(row['open'])) / atr_safe
+
+    vol_ma30_val = float(row['vol_ma30']) if ('vol_ma30' in row.index and not pd.isna(row['vol_ma30'])) else 1.0
+    vol_ratio = float(row['volume']) / max(vol_ma30_val, 1.0)
+
+    ma_prox = abs(float(row['close']) - float(row['maFast'])) / atr_safe
+
+    candle_range = float(row['high']) - float(row['low'])
+    close_pos = (float(row['close']) - float(row['low'])) / candle_range if candle_range > 0 else 0.5
+
+    # Component flags (Pine Script Section 16)
+    cc_smallBody    = body_ratio < body_thr
+    cc_largeBody    = body_ratio > 1.00
+    cc_midBodySoft  = 0.75 < body_ratio <= 1.00
+    cc_lowVol       = vol_ratio < 0.85
+    cc_spikeVol     = vol_ratio > 1.20
+    cc_farFromMA    = ma_prox > 1.00
+
+    adx_val         = float(row['ADX'])
+    cc_isTrending   = adx_val > 25.0
+    cc_isRanging    = not cc_isTrending
+    cc_isCrashMode  = adx_val > 40.0
+    cc_isWeakTrend  = 20.0 <= adx_val < 25.0
+
+    rsi_val = float(row['rsi'])
+    bb_basis_val = float(row['bb_basis20']) if ('bb_basis20' in row.index and not pd.isna(row['bb_basis20'])) else float(row['close'])
+
+    if is_long_conflict:
+        rsi_gate       = rsi_val > 45.0
+        bb_gate        = float(row['close']) > bb_basis_val
+        cc_waitHighQual = close_pos >= 0.50
+    else:
+        rsi_gate       = rsi_val < 55.0
+        bb_gate        = float(row['close']) < bb_basis_val
+        cc_waitHighQual = close_pos < 0.50
+
+    # EMA20 slope (3-bar) for SK1 trend/crash split
+    ema20_slope = 0.0
+    if actual_idx >= 3 and 'ema20' in df.columns:
+        ema20_slope = float(df['ema20'].iloc[actual_idx]) - float(df['ema20'].iloc[actual_idx - 3])
+
+    # 4-state classification
+    cc_safeToTrade = (not cc_isCrashMode and cc_smallBody and cc_isTrending
+                      and cc_lowVol and rsi_gate and bb_gate)
+    cc_skipSignal   = cc_isCrashMode or cc_largeBody or (cc_isRanging and cc_spikeVol)
+    cc_reverseSignal = (not cc_isCrashMode and cc_largeBody and cc_isRanging
+                        and cc_spikeVol and cc_farFromMA)
+    cc_waitConfirm  = not cc_safeToTrade and not cc_skipSignal and not cc_reverseSignal
+
+    if cc_safeToTrade:
+        return 'SAFE'
+    elif cc_reverseSignal:
+        return 'FLIP'
+    elif cc_skipSignal:
+        if cc_isCrashMode:
+            sk1_trend = ema20_slope > 0 if is_long_conflict else ema20_slope < 0
+            return 'SKIP-TREND' if sk1_trend else 'SKIP-CRASH'
+        elif cc_largeBody:
+            return 'SKIP-SK2'
+        else:
+            return 'SKIP-RANGE'
+    elif cc_waitConfirm:
+        if cc_midBodySoft or cc_isWeakTrend:
+            return 'SKIP-X'
+        return 'WAIT' if cc_waitHighQual else 'WAIT?'
+    return 'UNKNOWN'
+
+
+def _check_bar1_action(df, tf_minutes):
+    """
+    Checks whether the last closed candle (df.iloc[-1]) is a bar+1 follow-on after
+    a conflict candle at df.iloc[-2].
+
+    Requires the same computed columns as _classify_conflict_state plus
+    longCondition / shortCondition.
+
+    Returns: (action_type, direction) or (None, None)
+      action_type: 'ENTER' | 'TREND' | 'SK2_REV' | 'SK3_RECOV'
+      direction:   'L' | 'S'
+    """
+    if len(df) < 4:
+        return None, None
+
+    prev = df.iloc[-2]   # potential conflict candle
+    curr = df.iloc[-1]   # bar+1 candidate
+
+    prev_long_cond  = bool(prev.get('longCondition',  False))
+    prev_short_cond = bool(prev.get('shortCondition', False))
+
+    prev_long_conflict  = prev_long_cond  and float(prev['close']) < float(prev['open'])
+    prev_short_conflict = prev_short_cond and float(prev['close']) > float(prev['open'])
+
+    if not prev_long_conflict and not prev_short_conflict:
+        return None, None
+
+    is_long_conflict = prev_long_conflict
+
+    prev_state = _classify_conflict_state(df, -2, is_long_conflict, tf_minutes)
+
+    # Bar+1 measurements (use prev ATR for normalisation — same as Pine Script cc_atrSafe)
+    atr_safe = max(float(prev['ATR']), 1e-10)
+    confirm_body = abs(float(curr['close']) - float(curr['open'])) / atr_safe
+
+    vol_ma30_curr = float(curr['vol_ma30']) if ('vol_ma30' in curr.index and not pd.isna(curr['vol_ma30'])) else 1.0
+    confirm_vol = float(curr['volume']) / max(vol_ma30_curr, 1.0)
+
+    prev_close = float(prev['close'])
+    curr_close = float(curr['close'])
+
+    # WAIT / WAIT? → ENTER
+    if prev_state in ('WAIT', 'WAIT?'):
+        if is_long_conflict:
+            if curr_close > prev_close and confirm_body > 0.25 and confirm_vol >= 0.80:
+                return 'ENTER', 'L'
+        else:
+            if curr_close < prev_close and confirm_body > 0.25 and confirm_vol >= 0.80:
+                return 'ENTER', 'S'
+
+    # SKIP-TREND → TREND continuation
+    elif prev_state == 'SKIP-TREND':
+        if is_long_conflict:
+            if curr_close > prev_close and confirm_body > 0.25 and confirm_vol >= 0.75:
+                return 'TREND', 'L'
+        else:
+            if curr_close < prev_close and confirm_body > 0.25 and confirm_vol >= 0.75:
+                return 'TREND', 'S'
+
+    # SKIP-SK2 → Reverse continuation
+    elif prev_state == 'SKIP-SK2':
+        if is_long_conflict:   # long signal was skipped → bar+1 continuing DOWN → SHORT
+            if curr_close < prev_close and confirm_body > 0.35 and confirm_vol >= 1.0:
+                return 'SK2_REV', 'S'
+        else:                  # short signal was skipped → bar+1 continuing UP → LONG
+            if curr_close > prev_close and confirm_body > 0.35 and confirm_vol >= 1.0:
+                return 'SK2_REV', 'L'
+
+    # SKIP-RANGE → Recovery entry
+    elif prev_state == 'SKIP-RANGE':
+        if is_long_conflict:
+            if curr_close > prev_close and confirm_body > 0.30 and confirm_vol < 1.0:
+                return 'SK3_RECOV', 'L'
+        else:
+            if curr_close < prev_close and confirm_body > 0.30 and confirm_vol < 1.0:
+                return 'SK3_RECOV', 'S'
+
+    return None, None
+
+
+# =============================================================================
 # QWEN MULTI-MA SCANNER — Supports ALMA, JMA, T3, McGinley, KAMA
 # =============================================================================
 
@@ -909,16 +1086,18 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
     - ma_type: "ALMA", "JMA", "T3", "McGinley", "KAMA"
     - Other parameters same as apply_ama_pro_tema
 
-    Returns: (signal, crossover_angle, ma_gap_pct, rsi_value, open_value, close_value, signal_type, effective_type)
+    Returns: (signal, crossover_angle, ma_gap_pct, rsi_value, open_value, close_value,
+              signal_type, effective_type, candle_ts, conflict_state)
+    conflict_state is non-None only when conflict_type kwarg is set.
     """
     if df is None or len(df) < 200:
-        return None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None, None
 
     if not use_current_candle:
         df = df.iloc[:-1].copy()
 
     if len(df) < 200:
-        return None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None, None
 
     try:
         # === PINE SCRIPT PARAMETERS (same as AMA PRO TEMA) ===
@@ -1173,6 +1352,10 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
         rsi_vals_sel = [rsis[p] for p in range(7, 31)] + [rsis[35]]
         df['rsi'] = np.select(rsi_conds, rsi_vals_sel, default=rsis[35])
 
+        # Precompute vol_ma30 and BB-basis for conflict state classifier
+        df['vol_ma30']   = df['volume'].rolling(30).mean()
+        df['bb_basis20'] = df['close'].rolling(20).mean()
+
         # =================================================================
         # SECTION 5: STRATEGY LOGIC — MA crossovers
         # =================================================================
@@ -1203,12 +1386,18 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
         else:
             tf_minutes = 15
 
-        # Apply angle filter only if enabled
+        # Apply angle filter only if enabled (new thresholds: 4.0/6.0/8.0 matching updated Pine Script)
         if enable_angle_filter:
-            angle_threshold = 3.0 if tf_minutes <= 15 else 5.0 if tf_minutes <= 30 else 10.0
+            angle_threshold = 4.0 if tf_minutes <= 15 else 6.0 if tf_minutes <= 30 else 8.0
             angle_pass = df['crossAngle'] >= angle_threshold
             df['longCondition'] = df['longCondition'] & angle_pass
             df['shortCondition'] = df['shortCondition'] & angle_pass
+
+        # TF-aware minimum bars between signals (Pine Script Section 10, new version)
+        tf_min_bars = (max(i_minBarsBetween, 4) if tf_minutes <= 15 else
+                       max(i_minBarsBetween, 3) if tf_minutes <= 30 else
+                       max(i_minBarsBetween, 2) if tf_minutes <= 60 else
+                       i_minBarsBetween)
 
         # Apply volume filter only if enabled
         if enable_volume_filter:
@@ -1243,8 +1432,8 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
             else:
                 bars_since_short[i] = bars_since_short[i-1] + 1
 
-            lv = long_cond[i] and (bars_since_long[i-1] >= i_minBarsBetween if i > 0 else True)
-            sv = short_cond[i] and (bars_since_short[i-1] >= i_minBarsBetween if i > 0 else True)
+            lv = long_cond[i] and (bars_since_long[i-1] >= tf_min_bars if i > 0 else True)
+            sv = short_cond[i] and (bars_since_short[i-1] >= tf_min_bars if i > 0 else True)
 
             # Resolve conflicts
             if lv and sv:
@@ -1322,8 +1511,10 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
         # Matches TradingView plotshape: fires on ma_longCondition / ma_shortCondition
         # (raw crossover with angle+volume filter applied).
         #
-        # conflict_type kwarg: 'long' or 'short'
-        #   — bypasses angle filter, uses raw MA crossover + candle direction check
+        # conflict_type kwarg:
+        #   'long'  — Long Conflict: longCondition + bearish candle → classify state
+        #   'short' — Short Conflict: shortCondition + bullish candle → classify state
+        #   'bar1'  — Bar+1 follow-on: check previous bar conflict + current confirmation
         # =================================================================
         conflict_type = kwargs.get('conflict_type', None)
 
@@ -1331,19 +1522,42 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
         crossover_angle = None
         ma_gap_pct = None
         signal_type = "CROSSOVER"
+        conflict_state = None
 
         last_row = df.iloc[-1]
         last_ts = df.index[-1]
 
-        if conflict_type:
-            # Use same longCondition/shortCondition as normal signals (angle filter applied,
-            # matching TradingView Pine Script Section 16), then check candle direction.
+        if conflict_type == 'bar1':
+            # Bar+1 follow-on detection
+            action, direction = _check_bar1_action(df, tf_minutes)
+            if action and direction:
+                bar1_map = {
+                    ('ENTER',     'L'): ('LONG',  'BAR1_ENTER_L'),
+                    ('ENTER',     'S'): ('SHORT', 'BAR1_ENTER_S'),
+                    ('TREND',     'L'): ('LONG',  'BAR1_TREND_L'),
+                    ('TREND',     'S'): ('SHORT', 'BAR1_TREND_S'),
+                    ('SK2_REV',   'S'): ('SHORT', 'BAR1_SK2_REV_S'),
+                    ('SK2_REV',   'L'): ('LONG',  'BAR1_SK2_REV_L'),
+                    ('SK3_RECOV', 'L'): ('LONG',  'BAR1_SK3_RECOV_L'),
+                    ('SK3_RECOV', 'S'): ('SHORT', 'BAR1_SK3_RECOV_S'),
+                }
+                sig, st = bar1_map.get((action, direction), (None, None))
+                if sig:
+                    signal = sig
+                    signal_type = st
+                    conflict_state = f'{action} ({direction})'
+
+        elif conflict_type in ('long', 'short'):
+            # Conflict candle: signal fired but candle body contradicts direction
             if conflict_type == 'long' and last_row['longCondition'] and last_row['close'] < last_row['open']:
                 signal = "LONG"
                 signal_type = "CONFLICT_LONG"
+                conflict_state = _classify_conflict_state(df, -1, True, tf_minutes)
             elif conflict_type == 'short' and last_row['shortCondition'] and last_row['close'] > last_row['open']:
                 signal = "SHORT"
                 signal_type = "CONFLICT_SHORT"
+                conflict_state = _classify_conflict_state(df, -1, False, tf_minutes)
+
         else:
             if last_row['longCondition']:
                 signal = "LONG"
@@ -1351,7 +1565,7 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
                 signal = "SHORT"
 
         if signal:
-            logging.info(f"  >>> {signal} CROSSOVER ({effective_type}) on candle {last_ts}")
+            logging.info(f"  >>> {signal} ({signal_type or 'CROSSOVER'}, {effective_type}) on candle {last_ts}")
 
             # Calculate MA gap percentage
             fast_val = last_row['maFast']
@@ -1372,13 +1586,14 @@ def apply_qwen_multi_ma(df, ma_type="ALMA", tf_input="1 day", use_current_candle
             signal_type = None
 
         candle_ts = last_ts.strftime("%Y-%m-%d %H:%M:%S") if hasattr(last_ts, 'strftime') else str(last_ts)
-        return signal, crossover_angle, ma_gap_pct, rsi_value, open_value, close_value, signal_type, effective_type, candle_ts
+        return (signal, crossover_angle, ma_gap_pct, rsi_value, open_value, close_value,
+                signal_type, effective_type, candle_ts, conflict_state)
 
     except Exception as e:
         logging.error(f"Error in Qwen Multi-MA ({effective_type if 'effective_type' in dir() else ma_type}) calculation: {str(e)}")
         import traceback
         logging.error(traceback.format_exc())
-        return None, None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None, None
 
 # =============================================================================
 # MA QWEN LOGIC — Faithful Port of Pine Script
@@ -2168,8 +2383,9 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_hilega_sell = 'hilega_sell' in scanner_type or 'all' in scanner_type
         run_cross_up = 'rsi_cross_up_vwma' in scanner_type or 'all' in scanner_type
         run_cross_down = 'rsi_cross_dn_vwma' in scanner_type or 'all' in scanner_type
-        run_conflict_long = 'conflict_long' in scanner_type or 'all' in scanner_type
+        run_conflict_long  = 'conflict_long'  in scanner_type or 'all' in scanner_type
         run_conflict_short = 'conflict_short' in scanner_type or 'all' in scanner_type
+        run_conflict_bar1  = 'conflict_bar1'  in scanner_type or 'all' in scanner_type
     else:
         # Single scanner type (original logic)
         run_ama = scanner_type in ('ama_pro', 'both', 'all')
@@ -2180,8 +2396,9 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_hilega_sell = scanner_type in ('hilega_sell', 'all')
         run_cross_up = scanner_type in ('rsi_cross_up_vwma', 'all')
         run_cross_down = scanner_type in ('rsi_cross_dn_vwma', 'all')
-        run_conflict_long = scanner_type in ('conflict_long', 'all')
+        run_conflict_long  = scanner_type in ('conflict_long',  'all')
         run_conflict_short = scanner_type in ('conflict_short', 'all')
+        run_conflict_bar1  = scanner_type in ('conflict_bar1',  'all')
 
     async with semaphore:
         for tf in timeframes:
@@ -2199,7 +2416,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     # If MA type is ALMA, use the new Qwen Multi-MA scanner (true ALMA implementation)
                     # Otherwise, use Qwen Multi-MA for JMA, T3, McGinley, HMA, ZLEMA, Gaussian
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma, cts = await loop.run_in_executor(
+                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma, cts, _cs = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
                                 df.copy(),
@@ -2245,7 +2462,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 ama_now_signal = None
                 if run_ama_now and len(df) >= 200:
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now, cts_now = await loop.run_in_executor(
+                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now, cts_now, _cs = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
                                 df.copy(),
@@ -2364,7 +2581,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 # (bypasses angle filter so near-threshold crossovers are NOT missed)
                 if run_conflict_long and len(df) >= 200:
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        cl_signal, cl_angle, cl_gap, cl_rsi, cl_open, cl_close, cl_sig_type, cl_used_ma, cl_cts = await loop.run_in_executor(
+                        cl_signal, cl_angle, cl_gap, cl_rsi, cl_open, cl_close, cl_sig_type, cl_used_ma, cl_cts, cl_state = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
                                 df.copy(),
@@ -2380,12 +2597,13 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             )
                         )
                         if cl_signal:
-                            add_result(cl_signal, cl_angle, cl_gap, 'Long Conflict',
+                            cl_label = f'Long Conflict: {cl_state}' if cl_state else 'Long Conflict'
+                            add_result(cl_signal, cl_angle, cl_gap, cl_label,
                                        cl_rsi, cl_open, cl_close, cl_sig_type, ma_type_used=cl_used_ma, candle_ts=cl_cts)
 
                 if run_conflict_short and len(df) >= 200:
                     if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        cs_signal, cs_angle, cs_gap, cs_rsi, cs_open, cs_close, cs_sig_type, cs_used_ma, cs_cts = await loop.run_in_executor(
+                        cs_signal, cs_angle, cs_gap, cs_rsi, cs_open, cs_close, cs_sig_type, cs_used_ma, cs_cts, cs_state = await loop.run_in_executor(
                             executor,
                             lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
                                 df.copy(),
@@ -2401,8 +2619,41 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             )
                         )
                         if cs_signal:
-                            add_result(cs_signal, cs_angle, cs_gap, 'Short Conflict',
+                            cs_label = f'Short Conflict: {cs_state}' if cs_state else 'Short Conflict'
+                            add_result(cs_signal, cs_angle, cs_gap, cs_label,
                                        cs_rsi, cs_open, cs_close, cs_sig_type, ma_type_used=cs_used_ma, candle_ts=cs_cts)
+
+                if run_conflict_bar1 and len(df) >= 200:
+                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
+                        b1_signal, b1_angle, b1_gap, b1_rsi, b1_open, b1_close, b1_sig_type, b1_used_ma, b1_cts, b1_state = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
+                                df.copy(),
+                                ma_type=ma,
+                                tf_input=tf,
+                                adaptation_speed=adaptation_speed,
+                                min_bars_between=min_bars_between,
+                                enable_regime_filter=enable_regime_filter,
+                                enable_volume_filter=enable_volume_filter,
+                                enable_angle_filter=enable_angle_filter,
+                                auto_type=auto_ma_type,
+                                conflict_type='bar1'
+                            )
+                        )
+                        if b1_signal and b1_sig_type:
+                            _bar1_label_map = {
+                                'BAR1_ENTER_L':    'Bar+1: ENTER (L)',
+                                'BAR1_ENTER_S':    'Bar+1: ENTER (S)',
+                                'BAR1_TREND_L':    'Bar+1: TREND (L)',
+                                'BAR1_TREND_S':    'Bar+1: TREND (S)',
+                                'BAR1_SK2_REV_S':  'Bar+1: SHORT (S)',
+                                'BAR1_SK2_REV_L':  'Bar+1: LONG (L)',
+                                'BAR1_SK3_RECOV_L':'Bar+1: RE-L (L)',
+                                'BAR1_SK3_RECOV_S':'Bar+1: RE-S (S)',
+                            }
+                            b1_label = _bar1_label_map.get(b1_sig_type, 'Bar+1')
+                            add_result(b1_signal, b1_angle, b1_gap, b1_label,
+                                       b1_rsi, b1_open, b1_close, b1_sig_type, ma_type_used=b1_used_ma, candle_ts=b1_cts)
 
                 # ── HILEGA SCANNER LOGIC ──
                 # HILEGA uses a different result structure and is mutually exclusive with AMA/Qwen

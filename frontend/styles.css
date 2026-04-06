@@ -1751,6 +1751,18 @@ tbody tr:hover {
     color: #fff;
 }
 
+/* Bar+1 follow-on action badge */
+.scanner-badge.scanner-bar1 {
+    background: #4caf50;
+    border: 2px solid #a5d6a7;
+    color: #fff;
+}
+
+[data-theme="light"] .scanner-badge.scanner-bar1 {
+    background: #1b5e20;
+    color: #fff;
+}
+
 .scan-actions {
     margin-top: 32px;
     display: flex;
