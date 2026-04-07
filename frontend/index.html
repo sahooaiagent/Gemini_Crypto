@@ -198,8 +198,6 @@
                         <button class="chip" data-filter="AMA Pro Now">AMA Pro Now</button>
                         <button class="chip" data-filter="Qwen Now">Qwen Now</button>
                         <button class="chip" data-filter="Both Now">Both Now</button>
-                        <button class="chip" data-filter="Long Conflict">Long Conflict</button>
-                        <button class="chip" data-filter="Short Conflict">Short Conflict</button>
                     </div>
                 </div>
 
@@ -432,6 +430,100 @@
                 </div>
                 <div class="table-footer">
                     <span id="crossResultCount">0 results</span>
+                </div>
+            </div>
+
+            <!-- Conflict Signal Results Table -->
+            <div class="card" id="conflictSignalsCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-code-branch"></i> Conflict Signals</h2>
+                    <div class="card-actions">
+                        <button class="btn btn-sm btn-ghost" id="exportConflictCsvBtn">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-bar">
+                    <div class="search-input-wrap">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="conflictSearchInput" placeholder="Search signals..." autocomplete="off">
+                    </div>
+                    <div class="filter-chips" id="conflictSignalFilterChips">
+                        <button class="chip active" data-filter="all">All</button>
+                        <button class="chip" data-filter="LONG">
+                            <span class="chip-dot green"></span> Long
+                        </button>
+                        <button class="chip" data-filter="SHORT">
+                            <span class="chip-dot red"></span> Short
+                        </button>
+                    </div>
+                    <select class="filter-dropdown" id="conflictTfFilter">
+                        <option value="all">All Timeframes</option>
+                    </select>
+                    <div class="filter-chips" id="conflictTypeFilterChips">
+                        <button class="chip active" data-filter="all">All Types</button>
+                        <button class="chip" data-filter="Long Conflict">Long Conflict</button>
+                        <button class="chip" data-filter="Short Conflict">Short Conflict</button>
+                        <button class="chip" data-filter="Bar+1">Bar+1</button>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="table-wrap">
+                    <table id="conflictSignalsTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-col="name">
+                                    <span>Asset</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="timeframe">
+                                    <span>Timeframe</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="signal">
+                                    <span>Signal</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="angle">
+                                    <span>Angle</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="temagap">
+                                    <span>TEMA Gap</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="rsi">
+                                    <span>RSI</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="change">
+                                    <span>Daily Chg</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="scanner">
+                                    <span>Type</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th>MA Type</th>
+                                <th>Timestamp</th>
+                                <th>Candle</th>
+                            </tr>
+                        </thead>
+                        <tbody id="conflictSignalsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div class="empty-state" id="conflictEmptyState">
+                        <i class="fas fa-satellite-dish"></i>
+                        <p>No Conflict signals detected yet</p>
+                        <span>Run a Conflict scan to detect signals</span>
+                    </div>
+                </div>
+                <div class="table-footer">
+                    <span id="conflictResultCount">0 results</span>
                 </div>
             </div>
         </section>
@@ -768,7 +860,7 @@
      ════════════════════════════════════════════════════════════════════ -->
     <div id="toastContainer"></div>
 
-    <script src="app.js?v=11"></script>
+    <script src="app.js?v=12"></script>
 </body>
 
 </html>

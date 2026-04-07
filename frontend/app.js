@@ -6,11 +6,19 @@ const API_URL = 'http://localhost:8001';
 let allResults = [];
 let allHilegaResults = [];
 let allCrossResults = [];
+let allConflictResults = [];
 let scanRunning = false;
 let logPollInterval = null;
 let currentSort = { col: null, asc: true };
 let currentHilegaSort = { col: null, asc: true };
 let currentCrossSort = { col: null, asc: true };
+let currentConflictSort = { col: null, asc: true };
+
+function isConflictScanner(scanner) {
+    return (scanner || '').startsWith('Long Conflict')
+        || (scanner || '').startsWith('Short Conflict')
+        || (scanner || '').startsWith('Bar+1');
+}
 
 // ── DOM REFS ──
 const $ = (sel) => document.querySelector(sel);
@@ -149,7 +157,9 @@ async function fetchResults() {
         const res = await fetch(`${API_URL}/api/results`);
         if (!res.ok) return;
         const data = await res.json();
-        allResults = data.results || [];
+        const rawResults = data.results || [];
+        allConflictResults = rawResults.filter(r => isConflictScanner(r.Scanner));
+        allResults = rawResults.filter(r => !isConflictScanner(r.Scanner));
         allHilegaResults = data.hilega_results || [];
         allCrossResults = data.cross_results || [];
         if (data.scan_time) {
@@ -158,9 +168,11 @@ async function fetchResults() {
         populateTfFilter();
         populateHilegaTfFilter();
         populateCrossTfFilter();
+        populateConflictTfFilter();
         renderResults();
         renderHilegaResults();
         renderCrossResults();
+        renderConflictResults();
         updateStats();
     } catch (e) {
         // API may not have /api/results yet
@@ -481,14 +493,123 @@ function populateCrossTfFilter() {
     select.value = tfs.includes(currentVal) ? currentVal : 'all';
 }
 
+function populateConflictTfFilter() {
+    const select = $('#conflictTfFilter');
+    const currentVal = select.value;
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
+    const tfs = [...new Set(allConflictResults.map(r => r.Timeperiod))];
+    select.innerHTML = '<option value="all">All Timeframes</option>' +
+        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
+    select.value = tfs.includes(currentVal) ? currentVal : 'all';
+}
+
+function renderConflictResults() {
+    const body = $('#conflictSignalsBody');
+    const empty = $('#conflictEmptyState');
+    const countEl = $('#conflictResultCount');
+    const searchVal = ($('#conflictSearchInput').value || '').toLowerCase();
+    const signalFilter = $('#conflictSignalFilterChips .chip.active')?.dataset?.filter || 'all';
+    const tfFilter = $('#conflictTfFilter').value;
+    const typeFilter = $('#conflictTypeFilterChips .chip.active')?.dataset?.filter || 'all';
+
+    let filtered = allConflictResults.filter(r => {
+        if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
+        if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
+        if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
+        if (typeFilter !== 'all') {
+            const s = r.Scanner || '';
+            if (typeFilter === 'Bar+1') {
+                if (!s.startsWith('Bar+1')) return false;
+            } else {
+                if (!s.startsWith(typeFilter)) return false;
+            }
+        }
+        return true;
+    });
+
+    if (currentConflictSort.col) {
+        const numericCols = ['Angle', 'TEMA Gap', 'RSI', 'Daily Change'];
+        const isNumeric = numericCols.includes(currentConflictSort.col);
+        filtered.sort((a, b) => {
+            let va = a[currentConflictSort.col] || '';
+            let vb = b[currentConflictSort.col] || '';
+            if (isNumeric) {
+                va = parseFloat(String(va).replace(/[°%,+]/g, '')) || 0;
+                vb = parseFloat(String(vb).replace(/[°%,+]/g, '')) || 0;
+            } else {
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+            }
+            if (va < vb) return currentConflictSort.asc ? -1 : 1;
+            if (va > vb) return currentConflictSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+
+    if (filtered.length === 0) {
+        body.innerHTML = '';
+        empty.style.display = 'block';
+        countEl.textContent = '0 results';
+        return;
+    }
+
+    empty.style.display = 'none';
+    countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
+
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
+
+    body.innerHTML = filtered.map((r, i) => {
+        const sigCls = r.Signal === 'LONG' ? 'long' : 'short';
+        const sigIcon = r.Signal === 'LONG' ? 'fa-arrow-up' : 'fa-arrow-down';
+        const changeStr = r['Daily Change'] || '—';
+        const changeVal = parseFloat(changeStr);
+        const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
+        const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
+        const scannerVal = r.Scanner || '—';
+        function getConflictBadgeClass(scanner) {
+            if (scanner.startsWith('Long Conflict'))  return 'scanner-conflict-long';
+            if (scanner.startsWith('Short Conflict')) return 'scanner-conflict-short';
+            if (scanner.startsWith('Bar+1'))          return 'scanner-bar1';
+            return '';
+        }
+        const badgeCls = getConflictBadgeClass(scannerVal);
+        const colorStr = r.Color || 'N/A';
+        const colorCls = colorStr === 'GREEN' ? 'change-positive' : colorStr === 'RED' ? 'change-negative' : '';
+        const candleDisplay = colorStr === 'GREEN' ? 'Bullish' : colorStr === 'RED' ? 'Bearish' : colorStr === 'NEUTRAL' ? 'Neutral' : 'N/A';
+
+        return `
+            <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
+                <td><strong>${r['Crypto Name'] || '—'}</strong></td>
+                <td><span class="tf-badge">${tfDisplay}</span></td>
+                <td>
+                    <span class="signal-badge ${sigCls}">
+                        <i class="fas ${sigIcon}"></i>
+                        ${r.Signal}
+                    </span>
+                </td>
+                <td class="mono">${r.Angle || '—'}</td>
+                <td class="mono">${r['TEMA Gap'] || '—'}</td>
+                <td class="mono">${r.RSI || '—'}</td>
+                <td class="${changeCls}">${changeStr}</td>
+                <td>${badgeCls ? `<span class="scanner-badge ${badgeCls}">${scannerVal}</span>` : scannerVal}</td>
+                <td><span class="ma-type-badge">${r['MA Type'] || '—'}</span></td>
+                <td class="mono">${r.Timestamp || '—'}</td>
+                <td class="${colorCls}"><strong>${candleDisplay}</strong></td>
+            </tr>
+        `;
+    }).join('');
+}
+
 function updateStats() {
-    const total = allResults.length + allHilegaResults.length + allCrossResults.length;
+    const total = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length;
     const longs = allResults.filter(r => r.Signal === 'LONG').length
                 + allHilegaResults.filter(r => r.Signal === 'LONG').length
-                + allCrossResults.filter(r => r['Signal Type'] === 'Cross UP').length;
+                + allCrossResults.filter(r => r['Signal Type'] === 'Cross UP').length
+                + allConflictResults.filter(r => r.Signal === 'LONG').length;
     const shorts = allResults.filter(r => r.Signal === 'SHORT').length
                  + allHilegaResults.filter(r => r.Signal === 'SHORT').length
-                 + allCrossResults.filter(r => r['Signal Type'] === 'Cross DN').length;
+                 + allCrossResults.filter(r => r['Signal Type'] === 'Cross DN').length
+                 + allConflictResults.filter(r => r.Signal === 'SHORT').length;
     animateCounter('totalSignals', total);
     animateCounter('longSignals', longs);
     animateCounter('shortSignals', shorts);
@@ -512,6 +633,11 @@ function applyGlobalSignalFilter(filter) {
     const crossChip = $(`#crossSignalFilterChips .chip[data-filter="${crossFilter}"]`);
     if (crossChip) crossChip.classList.add('active');
 
+    // Conflict table chips
+    $$('#conflictSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+    const conflictChip = $(`#conflictSignalFilterChips .chip[data-filter="${filter}"]`);
+    if (conflictChip) conflictChip.classList.add('active');
+
     // Visual active state on stat cards
     $$('.stat-card.clickable-stat').forEach(c => c.classList.remove('filter-active'));
     if (filter === 'LONG') $('#longSignalCard').classList.add('filter-active');
@@ -520,6 +646,7 @@ function applyGlobalSignalFilter(filter) {
     renderResults();
     renderHilegaResults();
     renderCrossResults();
+    renderConflictResults();
 }
 
 function updateLastScanTime(timeStr) {
@@ -825,9 +952,11 @@ async function runScan() {
     allResults = [];
     allHilegaResults = [];
     allCrossResults = [];
+    allConflictResults = [];
     renderResults();
     renderHilegaResults();
     renderCrossResults();
+    renderConflictResults();
     updateStats();
 
     // Add scan start log
@@ -876,37 +1005,29 @@ async function runScan() {
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
 
         const data = await res.json();
-        allResults = data.data || [];
+        const rawData = data.data || [];
+        allConflictResults = rawData.filter(r => isConflictScanner(r.Scanner));
+        allResults = rawData.filter(r => !isConflictScanner(r.Scanner));
         allHilegaResults = data.hilega_data || [];
         allCrossResults = data.cross_data || [];
 
-        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length;
+        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length;
 
         updateProgress(100, 'Scan complete!');
-        if (allHilegaResults.length > 0) {
-            addLogLine('success', `✅ SCAN COMPLETED — ${allHilegaResults.length} HILEGA signal(s) found`);
-        } else if (allCrossResults.length > 0) {
-            addLogLine('success', `✅ SCAN COMPLETED — ${allCrossResults.length} Cross signal(s) found`);
-        } else {
-            addLogLine('success', `✅ SCAN COMPLETED — ${allResults.length} signal(s) found`);
-        }
+        addLogLine('success', `✅ SCAN COMPLETED — ${allResults.length} AMA/Qwen | ${allConflictResults.length} Conflict | ${allHilegaResults.length} HILEGA | ${allCrossResults.length} Cross signal(s) found`);
 
         populateTfFilter();
         populateHilegaTfFilter();
         populateCrossTfFilter();
+        populateConflictTfFilter();
         renderResults();
         renderHilegaResults();
         renderCrossResults();
+        renderConflictResults();
         updateStats();
         updateLastScanTime(new Date().toISOString());
 
-        if (allHilegaResults.length > 0) {
-            showToast(`Scan complete! ${allHilegaResults.length} HILEGA signal(s) found.`, 'success');
-        } else if (allCrossResults.length > 0) {
-            showToast(`Scan complete! ${allCrossResults.length} Cross signal(s) found.`, 'success');
-        } else {
-            showToast(`Scan complete! ${allResults.length} signal(s) found.`, 'success');
-        }
+        showToast(`Scan complete! ${totalSignals} total signal(s) found.`, 'success');
 
         // Switch to dashboard tab to show results
         if (totalSignals > 0) {
@@ -1160,6 +1281,65 @@ function initFilterControls() {
             });
             th.classList.add(currentCrossSort.asc ? 'sorted-asc' : 'sorted-desc');
             renderCrossResults();
+        });
+    });
+
+    // ═══ CONFLICT FILTER CONTROLS ═══
+
+    // Conflict signal filter chips
+    $$('#conflictSignalFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#conflictSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            $$('.stat-card.clickable-stat').forEach(c => c.classList.remove('filter-active'));
+            renderConflictResults();
+        });
+    });
+
+    // Conflict type filter chips
+    $$('#conflictTypeFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#conflictTypeFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            renderConflictResults();
+        });
+    });
+
+    // Conflict search
+    let conflictSearchTimeout;
+    $('#conflictSearchInput').addEventListener('input', () => {
+        clearTimeout(conflictSearchTimeout);
+        conflictSearchTimeout = setTimeout(renderConflictResults, 200);
+    });
+
+    // Conflict timeframe filter
+    $('#conflictTfFilter').addEventListener('change', renderConflictResults);
+
+    // Conflict column sorting
+    $$('#conflictSignalsTable th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const colMap = {
+                name: 'Crypto Name',
+                timeframe: 'Timeperiod',
+                signal: 'Signal',
+                angle: 'Angle',
+                temagap: 'TEMA Gap',
+                rsi: 'RSI',
+                change: 'Daily Change',
+                scanner: 'Scanner'
+            };
+            const col = colMap[th.dataset.col];
+            if (currentConflictSort.col === col) {
+                currentConflictSort.asc = !currentConflictSort.asc;
+            } else {
+                currentConflictSort.col = col;
+                currentConflictSort.asc = true;
+            }
+            $$('#conflictSignalsTable th.sortable').forEach(t => {
+                t.classList.remove('sorted-asc', 'sorted-desc');
+            });
+            th.classList.add(currentConflictSort.asc ? 'sorted-asc' : 'sorted-desc');
+            renderConflictResults();
         });
     });
 }
