@@ -482,12 +482,44 @@ function populateCrossTfFilter() {
 }
 
 function updateStats() {
-    const total = allResults.length;
-    const longs = allResults.filter(r => r.Signal === 'LONG').length;
-    const shorts = allResults.filter(r => r.Signal === 'SHORT').length;
+    const total = allResults.length + allHilegaResults.length + allCrossResults.length;
+    const longs = allResults.filter(r => r.Signal === 'LONG').length
+                + allHilegaResults.filter(r => r.Signal === 'LONG').length
+                + allCrossResults.filter(r => r['Signal Type'] === 'Cross UP').length;
+    const shorts = allResults.filter(r => r.Signal === 'SHORT').length
+                 + allHilegaResults.filter(r => r.Signal === 'SHORT').length
+                 + allCrossResults.filter(r => r['Signal Type'] === 'Cross DN').length;
     animateCounter('totalSignals', total);
     animateCounter('longSignals', longs);
     animateCounter('shortSignals', shorts);
+}
+
+function applyGlobalSignalFilter(filter) {
+    // AMA table chips
+    $$('#signalFilterChips .chip').forEach(c => c.classList.remove('active'));
+    const amaChip = $(`#signalFilterChips .chip[data-filter="${filter}"]`);
+    if (amaChip) amaChip.classList.add('active');
+
+    // HILEGA table chips
+    $$('#hilegaSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+    const hilegaChip = $(`#hilegaSignalFilterChips .chip[data-filter="${filter}"]`);
+    if (hilegaChip) hilegaChip.classList.add('active');
+
+    // Cross table chips — map LONG→Cross UP, SHORT→Cross DN, all→all
+    $$('#crossSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+    const crossFilterMap = { 'LONG': 'Cross UP', 'SHORT': 'Cross DN', 'all': 'all' };
+    const crossFilter = crossFilterMap[filter] || 'all';
+    const crossChip = $(`#crossSignalFilterChips .chip[data-filter="${crossFilter}"]`);
+    if (crossChip) crossChip.classList.add('active');
+
+    // Visual active state on stat cards
+    $$('.stat-card.clickable-stat').forEach(c => c.classList.remove('filter-active'));
+    if (filter === 'LONG') $('#longSignalCard').classList.add('filter-active');
+    else if (filter === 'SHORT') $('#shortSignalCard').classList.add('filter-active');
+
+    renderResults();
+    renderHilegaResults();
+    renderCrossResults();
 }
 
 function updateLastScanTime(timeStr) {
@@ -962,11 +994,18 @@ function addLogLine(cls, msg) {
 // FILTER CONTROLS
 // ══════════════════════════════════════════════════════════════
 function initFilterControls() {
+    // Stat card click filters
+    $('#totalSignalCard').addEventListener('click', () => applyGlobalSignalFilter('all'));
+    $('#longSignalCard').addEventListener('click', () => applyGlobalSignalFilter('LONG'));
+    $('#shortSignalCard').addEventListener('click', () => applyGlobalSignalFilter('SHORT'));
+
     // Signal filter chips
     $$('#signalFilterChips .chip').forEach(chip => {
         chip.addEventListener('click', () => {
             $$('#signalFilterChips .chip').forEach(c => c.classList.remove('active'));
             chip.classList.add('active');
+            // Clear stat card active state when using per-table filter
+            $$('.stat-card.clickable-stat').forEach(c => c.classList.remove('filter-active'));
             renderResults();
         });
     });

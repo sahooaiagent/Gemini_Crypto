@@ -13,7 +13,7 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css?v=9">
-    <link rel="stylesheet" href="modern-config.css?v=1">
+    <link rel="stylesheet" href="modern-config.css?v=2">
 </head>
 
 <body>
@@ -110,7 +110,7 @@
 
             <!-- Stats Row -->
             <div class="stats-grid">
-                <div class="stat-card" data-accent="cyan">
+                <div class="stat-card clickable-stat" id="totalSignalCard" data-accent="cyan" title="Show all signals">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-signal"></i>
                     </div>
@@ -120,7 +120,7 @@
                     </div>
                     <div class="stat-sparkline" id="sparkTotal"></div>
                 </div>
-                <div class="stat-card" data-accent="green">
+                <div class="stat-card clickable-stat" id="longSignalCard" data-accent="green" title="Filter: Long signals only">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-arrow-trend-up"></i>
                     </div>
@@ -130,7 +130,7 @@
                     </div>
                     <div class="stat-sparkline" id="sparkLong"></div>
                 </div>
-                <div class="stat-card" data-accent="red">
+                <div class="stat-card clickable-stat" id="shortSignalCard" data-accent="red" title="Filter: Short signals only">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-arrow-trend-down"></i>
                     </div>
@@ -164,7 +164,7 @@
             <!-- Signal Results Table -->
             <div class="card" id="signalsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-bolt"></i> Detected Signals</h2>
+                    <h2><i class="fas fa-bolt"></i> AMA Pro Signals</h2>
                     <div class="card-actions">
                         <button class="btn btn-sm btn-ghost" id="exportCsvBtn">
                             <i class="fas fa-download"></i> Export
@@ -263,7 +263,7 @@
             <!-- Hilega Signal Results Table -->
             <div class="card" id="hilegaSignalsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-chart-line"></i> Detected Signals Hilega</h2>
+                    <h2><i class="fas fa-chart-line"></i> Hilega Signals</h2>
                     <div class="card-actions">
                         <button class="btn btn-sm btn-ghost" id="exportHilegaCsvBtn">
                             <i class="fas fa-download"></i> Export
@@ -349,7 +349,7 @@
             <!-- Cross Signal Results Table -->
             <div class="card" id="crossSignalsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-exchange-alt"></i> Detected Signals Cross</h2>
+                    <h2><i class="fas fa-exchange-alt"></i> RSI - VWMA Cross Signals</h2>
                 </div>
 
                 <!-- Filters -->
