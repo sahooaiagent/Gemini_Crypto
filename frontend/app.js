@@ -6,11 +6,24 @@ const API_URL = 'http://localhost:8001';
 let allResults = [];
 let allHilegaResults = [];
 let allCrossResults = [];
+let allConflictResults = [];
+let allGapResults = [];
 let scanRunning = false;
+let lastScanConfig = (() => {
+    try { return JSON.parse(localStorage.getItem('lastScanConfig')) || null; } catch { return null; }
+})();
 let logPollInterval = null;
 let currentSort = { col: null, asc: true };
 let currentHilegaSort = { col: null, asc: true };
 let currentCrossSort = { col: null, asc: true };
+let currentConflictSort = { col: null, asc: true };
+let currentGapSort = { col: null, asc: true };
+
+function isConflictScanner(scanner) {
+    return (scanner || '').startsWith('Long Conflict')
+        || (scanner || '').startsWith('Short Conflict')
+        || (scanner || '').startsWith('Bar+1');
+}
 
 // ── DOM REFS ──
 const $ = (sel) => document.querySelector(sel);
@@ -149,18 +162,25 @@ async function fetchResults() {
         const res = await fetch(`${API_URL}/api/results`);
         if (!res.ok) return;
         const data = await res.json();
-        allResults = data.results || [];
+        const rawResults = data.results || [];
+        allConflictResults = rawResults.filter(r => isConflictScanner(r.Scanner));
+        allResults = rawResults.filter(r => !isConflictScanner(r.Scanner));
         allHilegaResults = data.hilega_results || [];
         allCrossResults = data.cross_results || [];
+        allGapResults = data.gap_results || [];
         if (data.scan_time) {
             updateLastScanTime(data.scan_time);
         }
         populateTfFilter();
         populateHilegaTfFilter();
         populateCrossTfFilter();
+        populateConflictTfFilter();
+        populateGapTfFilter();
         renderResults();
         renderHilegaResults();
         renderCrossResults();
+        renderConflictResults();
+        renderGapResults();
         updateStats();
     } catch (e) {
         // API may not have /api/results yet
@@ -481,13 +501,273 @@ function populateCrossTfFilter() {
     select.value = tfs.includes(currentVal) ? currentVal : 'all';
 }
 
+function populateConflictTfFilter() {
+    const select = $('#conflictTfFilter');
+    const currentVal = select.value;
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
+    const tfs = [...new Set(allConflictResults.map(r => r.Timeperiod))];
+    select.innerHTML = '<option value="all">All Timeframes</option>' +
+        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
+    select.value = tfs.includes(currentVal) ? currentVal : 'all';
+}
+
+function renderConflictResults() {
+    const body = $('#conflictSignalsBody');
+    const empty = $('#conflictEmptyState');
+    const countEl = $('#conflictResultCount');
+    const searchVal = ($('#conflictSearchInput').value || '').toLowerCase();
+    const signalFilter = $('#conflictSignalFilterChips .chip.active')?.dataset?.filter || 'all';
+    const tfFilter = $('#conflictTfFilter').value;
+    const typeFilter = $('#conflictTypeFilterChips .chip.active')?.dataset?.filter || 'all';
+
+    let filtered = allConflictResults.filter(r => {
+        if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
+        if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
+        if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
+        if (typeFilter !== 'all') {
+            const s = r.Scanner || '';
+            if (typeFilter === 'Bar+1') {
+                if (!s.startsWith('Bar+1')) return false;
+            } else {
+                if (!s.startsWith(typeFilter)) return false;
+            }
+        }
+        return true;
+    });
+
+    if (currentConflictSort.col) {
+        const numericCols = ['Angle', 'TEMA Gap', 'RSI', 'Daily Change'];
+        const isNumeric = numericCols.includes(currentConflictSort.col);
+        filtered.sort((a, b) => {
+            let va = a[currentConflictSort.col] || '';
+            let vb = b[currentConflictSort.col] || '';
+            if (isNumeric) {
+                va = parseFloat(String(va).replace(/[°%,+]/g, '')) || 0;
+                vb = parseFloat(String(vb).replace(/[°%,+]/g, '')) || 0;
+            } else {
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+            }
+            if (va < vb) return currentConflictSort.asc ? -1 : 1;
+            if (va > vb) return currentConflictSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+
+    if (filtered.length === 0) {
+        body.innerHTML = '';
+        empty.style.display = 'block';
+        countEl.textContent = '0 results';
+        return;
+    }
+
+    empty.style.display = 'none';
+    countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
+
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
+
+    body.innerHTML = filtered.map((r, i) => {
+        const sigCls = r.Signal === 'LONG' ? 'long' : 'short';
+        const sigIcon = r.Signal === 'LONG' ? 'fa-arrow-up' : 'fa-arrow-down';
+        const changeStr = r['Daily Change'] || '—';
+        const changeVal = parseFloat(changeStr);
+        const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
+        const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
+        const scannerVal = r.Scanner || '—';
+        function getConflictBadgeClass(scanner) {
+            if (scanner.startsWith('Long Conflict'))  return 'scanner-conflict-long';
+            if (scanner.startsWith('Short Conflict')) return 'scanner-conflict-short';
+            if (scanner.startsWith('Bar+1'))          return 'scanner-bar1';
+            return '';
+        }
+        const badgeCls = getConflictBadgeClass(scannerVal);
+        const colorStr = r.Color || 'N/A';
+        const colorCls = colorStr === 'GREEN' ? 'change-positive' : colorStr === 'RED' ? 'change-negative' : '';
+        const candleDisplay = colorStr === 'GREEN' ? 'Bullish' : colorStr === 'RED' ? 'Bearish' : colorStr === 'NEUTRAL' ? 'Neutral' : 'N/A';
+
+        return `
+            <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
+                <td><strong>${r['Crypto Name'] || '—'}</strong></td>
+                <td><span class="tf-badge">${tfDisplay}</span></td>
+                <td>
+                    <span class="signal-badge ${sigCls}">
+                        <i class="fas ${sigIcon}"></i>
+                        ${r.Signal}
+                    </span>
+                </td>
+                <td class="mono">${r.Angle || '—'}</td>
+                <td class="mono">${r['TEMA Gap'] || '—'}</td>
+                <td class="mono">${r.RSI || '—'}</td>
+                <td class="${changeCls}">${changeStr}</td>
+                <td>${badgeCls ? `<span class="scanner-badge ${badgeCls}">${scannerVal}</span>` : scannerVal}</td>
+                <td><span class="ma-type-badge">${r['MA Type'] || '—'}</span></td>
+                <td class="mono">${r.Timestamp || '—'}</td>
+                <td class="${colorCls}"><strong>${candleDisplay}</strong></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function populateGapTfFilter() {
+    const select = $('#gapTfFilter');
+    if (!select) return;
+    const currentVal = select.value;
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
+    const tfs = [...new Set(allGapResults.map(r => r.Timeperiod))];
+    select.innerHTML = '<option value="all">All Timeframes</option>' +
+        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
+    select.value = tfs.includes(currentVal) ? currentVal : 'all';
+}
+
+function renderGapResults() {
+    const body = $('#gapSignalsBody');
+    const empty = $('#gapEmptyState');
+    const countEl = $('#gapResultCount');
+    if (!body) return;
+
+    const searchVal = ($('#gapSearchInput').value || '').toLowerCase();
+    const signalFilter = $('#gapSignalFilterChips .chip.active')?.dataset?.filter || 'all';
+    const tfFilter = $('#gapTfFilter').value;
+
+    let filtered = allGapResults.filter(r => {
+        if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
+        if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
+        if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
+        return true;
+    });
+
+    if (currentGapSort.col) {
+        const numericCols = ['Gap Size', 'Gap High', 'Gap Low', 'Daily Change'];
+        const isNumeric = numericCols.includes(currentGapSort.col);
+        filtered.sort((a, b) => {
+            let va = a[currentGapSort.col] || '';
+            let vb = b[currentGapSort.col] || '';
+            if (isNumeric) {
+                va = parseFloat(String(va).replace(/[°%,+]/g, '')) || 0;
+                vb = parseFloat(String(vb).replace(/[°%,+]/g, '')) || 0;
+            } else {
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+            }
+            if (va < vb) return currentGapSort.asc ? -1 : 1;
+            if (va > vb) return currentGapSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+
+    if (filtered.length === 0) {
+        body.innerHTML = '';
+        empty.style.display = 'block';
+        countEl.textContent = '0 results';
+        return;
+    }
+
+    empty.style.display = 'none';
+    countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
+
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
+
+    body.innerHTML = filtered.map((r, i) => {
+        const sigCls = r.Signal === 'LONG' ? 'long' : 'short';
+        const sigIcon = r.Signal === 'LONG' ? 'fa-arrow-up' : 'fa-arrow-down';
+        const sigLabel = r.Signal === 'LONG' ? 'Gap Up' : 'Gap Down';
+        const changeStr = r['Daily Change'] || '—';
+        const changeVal = parseFloat(changeStr);
+        const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
+        const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
+        const gapZone = `${r['Gap Low'] || '—'} – ${r['Gap High'] || '—'}`;
+
+        return `
+            <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
+                <td><strong>${r['Crypto Name'] || '—'}</strong></td>
+                <td><span class="tf-badge">${tfDisplay}</span></td>
+                <td>
+                    <span class="signal-badge ${sigCls}">
+                        <i class="fas ${sigIcon}"></i>
+                        ${sigLabel}
+                    </span>
+                </td>
+                <td>${r['Gap Type'] || '—'}</td>
+                <td class="mono">${r['Gap Size'] || '—'}</td>
+                <td class="mono">${gapZone}</td>
+                <td class="${changeCls}">${changeStr}</td>
+                <td class="mono">${r.Candle || '—'}</td>
+                <td class="mono">${r.Timestamp || '—'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
 function updateStats() {
-    const total = allResults.length;
-    const longs = allResults.filter(r => r.Signal === 'LONG').length;
-    const shorts = allResults.filter(r => r.Signal === 'SHORT').length;
+    const total = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length + allGapResults.length;
+    const longs = allResults.filter(r => r.Signal === 'LONG').length
+                + allHilegaResults.filter(r => r.Signal === 'LONG').length
+                + allCrossResults.filter(r => r['Signal Type'] === 'Cross UP').length
+                + allConflictResults.filter(r => r.Signal === 'LONG').length
+                + allGapResults.filter(r => r.Signal === 'LONG').length;
+    const shorts = allResults.filter(r => r.Signal === 'SHORT').length
+                 + allHilegaResults.filter(r => r.Signal === 'SHORT').length
+                 + allCrossResults.filter(r => r['Signal Type'] === 'Cross DN').length
+                 + allConflictResults.filter(r => r.Signal === 'SHORT').length
+                 + allGapResults.filter(r => r.Signal === 'SHORT').length;
     animateCounter('totalSignals', total);
     animateCounter('longSignals', longs);
     animateCounter('shortSignals', shorts);
+}
+
+// Instantly clears dashboard stats and tables before a rescan so the
+// user gets immediate visual feedback that a new scan is starting.
+function clearDashboard() {
+    ['totalSignals', 'longSignals', 'shortSignals'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '0';
+    });
+    const lastScanEl = $('#lastScanTime');
+    if (lastScanEl) { lastScanEl.textContent = 'Scanning…'; lastScanEl.title = ''; }
+    allResults = [];
+    allHilegaResults = [];
+    allCrossResults = [];
+    allConflictResults = [];
+    allGapResults = [];
+    renderResults();
+    renderHilegaResults();
+    renderCrossResults();
+    renderConflictResults();
+    renderGapResults();
+}
+
+function applyGlobalSignalFilter(filter) {
+    // AMA table chips
+    $$('#signalFilterChips .chip').forEach(c => c.classList.remove('active'));
+    const amaChip = $(`#signalFilterChips .chip[data-filter="${filter}"]`);
+    if (amaChip) amaChip.classList.add('active');
+
+    // HILEGA table chips
+    $$('#hilegaSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+    const hilegaChip = $(`#hilegaSignalFilterChips .chip[data-filter="${filter}"]`);
+    if (hilegaChip) hilegaChip.classList.add('active');
+
+    // Cross table chips — map LONG→Cross UP, SHORT→Cross DN, all→all
+    $$('#crossSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+    const crossFilterMap = { 'LONG': 'Cross UP', 'SHORT': 'Cross DN', 'all': 'all' };
+    const crossFilter = crossFilterMap[filter] || 'all';
+    const crossChip = $(`#crossSignalFilterChips .chip[data-filter="${crossFilter}"]`);
+    if (crossChip) crossChip.classList.add('active');
+
+    // Conflict table chips
+    $$('#conflictSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+    const conflictChip = $(`#conflictSignalFilterChips .chip[data-filter="${filter}"]`);
+    if (conflictChip) conflictChip.classList.add('active');
+
+    // Visual active state on stat cards
+    $$('.stat-card.clickable-stat').forEach(c => c.classList.remove('filter-active'));
+    if (filter === 'LONG') $('#longSignalCard').classList.add('filter-active');
+    else if (filter === 'SHORT') $('#shortSignalCard').classList.add('filter-active');
+
+    renderResults();
+    renderHilegaResults();
+    renderCrossResults();
+    renderConflictResults();
 }
 
 function updateLastScanTime(timeStr) {
@@ -539,42 +819,27 @@ function initScannerControls() {
             const scannerType = chip.dataset.scanner;
             const hilegaScanners = ['hilega_buy', 'hilega_sell'];
             const crossScanners = ['rsi_cross_up_vwma', 'rsi_cross_dn_vwma'];
+            const gapScanners = ['gap'];
             const amaScanners = ['ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now', 'both_now', 'all', 'conflict_long', 'conflict_short', 'conflict_bar1'];
+            const allExclusive = [...hilegaScanners, ...crossScanners, ...gapScanners, ...amaScanners];
 
-            // Check if clicking a HILEGA scanner
+            const deactivateOthers = (excludeGroup) => {
+                $$('.scanner-chip').forEach(c => {
+                    if (!excludeGroup.includes(c.dataset.scanner)) c.classList.remove('active');
+                });
+            };
+
             if (hilegaScanners.includes(scannerType)) {
-                // If activating HILEGA, deactivate all AMA and Cross scanners
-                if (!chip.classList.contains('active')) {
-                    $$('.scanner-chip').forEach(c => {
-                        if (amaScanners.includes(c.dataset.scanner) || crossScanners.includes(c.dataset.scanner)) {
-                            c.classList.remove('active');
-                        }
-                    });
-                }
+                if (!chip.classList.contains('active')) deactivateOthers(hilegaScanners);
                 chip.classList.toggle('active');
-            }
-            // Check if clicking a Cross scanner
-            else if (crossScanners.includes(scannerType)) {
-                // If activating Cross, deactivate all AMA and HILEGA scanners
-                if (!chip.classList.contains('active')) {
-                    $$('.scanner-chip').forEach(c => {
-                        if (amaScanners.includes(c.dataset.scanner) || hilegaScanners.includes(c.dataset.scanner)) {
-                            c.classList.remove('active');
-                        }
-                    });
-                }
+            } else if (crossScanners.includes(scannerType)) {
+                if (!chip.classList.contains('active')) deactivateOthers(crossScanners);
                 chip.classList.toggle('active');
-            }
-            // Check if clicking an AMA/Qwen scanner
-            else if (amaScanners.includes(scannerType)) {
-                // If activating AMA, deactivate all HILEGA and Cross scanners
-                if (!chip.classList.contains('active')) {
-                    $$('.scanner-chip').forEach(c => {
-                        if (hilegaScanners.includes(c.dataset.scanner) || crossScanners.includes(c.dataset.scanner)) {
-                            c.classList.remove('active');
-                        }
-                    });
-                }
+            } else if (gapScanners.includes(scannerType)) {
+                if (!chip.classList.contains('active')) deactivateOthers(gapScanners);
+                chip.classList.toggle('active');
+            } else if (amaScanners.includes(scannerType)) {
+                if (!chip.classList.contains('active')) deactivateOthers(amaScanners);
                 chip.classList.toggle('active');
             }
         });
@@ -641,14 +906,12 @@ function initScannerControls() {
     $('#hilegaRsiMode').addEventListener('change', updateAlmaFixedLengthsVisibility);
     updateAlmaFixedLengthsVisibility();
 
-    // Run scan button
-    $('#runScanBtn').addEventListener('click', runScan);
+    // Run scan button — wrap in arrow so no MouseEvent is passed as overrideConfig
+    $('#runScanBtn').addEventListener('click', () => runScan());
 
-    // Refresh button
+    // Refresh button — always triggers a full rescan using last scan config (or DOM if no prior scan)
     $('#refreshBtn').addEventListener('click', () => {
-        fetchResults();
-        fetchMarketData();
-        showToast('Data refreshed', 'info');
+        runScan(lastScanConfig);
     });
 
     // Export CSV
@@ -656,6 +919,29 @@ function initScannerControls() {
 
     // Export Hilega CSV
     $('#exportHilegaCsvBtn').addEventListener('click', exportHilegaCSV);
+
+    // Export Gap CSV
+    $('#exportGapCsvBtn').addEventListener('click', exportGapCSV);
+
+    // Gap table — filter & sort listeners
+    $('#gapSearchInput').addEventListener('input', renderGapResults);
+    $('#gapTfFilter').addEventListener('change', renderGapResults);
+    $('#gapSignalFilterChips .chip').forEach(c => c.addEventListener('click', () => {
+        $('#gapSignalFilterChips .chip').forEach(x => x.classList.remove('active'));
+        c.classList.add('active');
+        renderGapResults();
+    }));
+    $('#gapSignalsTable .sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = th.dataset.col;
+            const colMap = { name: 'Crypto Name', timeframe: 'Timeperiod', signal: 'Signal', gaptype: 'Gap Type', gapsize: 'Gap Size', change: 'Daily Change' };
+            const key = colMap[col];
+            if (!key) return;
+            if (currentGapSort.col === key) currentGapSort.asc = !currentGapSort.asc;
+            else { currentGapSort.col = key; currentGapSort.asc = true; }
+            renderGapResults();
+        });
+    });
 
     // Clear logs
     const clearLogHTML = `
@@ -725,82 +1011,91 @@ document.addEventListener('DOMContentLoaded', () => {
     initModernCollapse();
 });
 
-async function runScan() {
+async function runScan(overrideConfig = null) {
     if (scanRunning) return;
 
-    const crypto_count = parseInt($('#cryptoCount').value) || 20;
-    const timeframes = Array.from($$('.tf-chip.active')).map(c => c.dataset.tf);
-    const adaptation_speed = $('#adaptationSpeed').value;
-    const min_bars_between = parseInt($('#minBarsBetween').value) || 3;
-    const ma_type = $('#maType').value || 'ALMA';  // Get MA type selection
+    let crypto_count, timeframes, adaptation_speed, min_bars_between, ma_type,
+        enable_regime_filter, enable_volume_filter, enable_angle_filter,
+        hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
+        alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+        scanner_type, scannerLabel;
 
-    // Get Advanced Filter toggles
-    const enable_regime_filter = $('#enableRegimeFilter').checked;
-    const enable_volume_filter = $('#enableVolumeFilter').checked;
-    const enable_angle_filter = $('#enableAngleFilter').checked;
-
-    // Get HILEGA RSI thresholds
-    const hilega_buy_rsi = parseInt($('#hilegaBuyRsi').value) || 10;
-    const hilega_sell_rsi = parseInt($('#hilegaSellRsi').value) || 90;
-
-    // Get HILEGA RSI Mode and parameters
-    const hilega_rsi_mode = $('#hilegaRsiMode').value;
-    const alma_fixed_rsi_length = parseInt($('#almaFixedRsiLength').value) || 11;
-    const alma_fixed_vwma_length = parseInt($('#almaFixedVwmaLength').value) || 21;
-    const alma_fixed_tema_length = parseInt($('#almaFixedTemaLength').value) || 10;
-
-    // Check if ALL button is active
-    const isAllActive = $('#allScannersBtn').classList.contains('active');
-
-    // Get all selected scanner types
-    const selectedScanners = isAllActive ? [] : Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
-
-    if (timeframes.length === 0) {
-        showToast('Select at least one timeframe', 'warning');
-        return;
-    }
-
-    if (!isAllActive && selectedScanners.length === 0) {
-        showToast('Select at least one scanner type', 'warning');
-        return;
-    }
-
-    // Determine scanner_type based on selections
-    let scanner_type;
-    if (isAllActive) {
-        // "ALL" button is active - use 'all' string
-        scanner_type = 'all';
-    } else if (selectedScanners.length === 1) {
-        // Single scanner - send as string
-        scanner_type = selectedScanners[0];
+    if (overrideConfig) {
+        // ── RESCAN path: replay the last scan configuration ──
+        ({ crypto_count, timeframes, adaptation_speed, min_bars_between, ma_type,
+           enable_regime_filter, enable_volume_filter, enable_angle_filter,
+           hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
+           alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+           scanner_type, scannerLabel } = overrideConfig);
     } else {
-        // Multiple specific scanners - send as array
-        scanner_type = selectedScanners;
+        // ── NORMAL path: read configuration from the Scanner UI ──
+        crypto_count = parseInt($('#cryptoCount').value) || 20;
+        timeframes = Array.from($$('.tf-chip.active')).map(c => c.dataset.tf);
+        adaptation_speed = $('#adaptationSpeed').value;
+        min_bars_between = parseInt($('#minBarsBetween').value) || 3;
+        ma_type = $('#maType').value || 'ALMA';
+
+        enable_regime_filter = $('#enableRegimeFilter').checked;
+        enable_volume_filter = $('#enableVolumeFilter').checked;
+        enable_angle_filter = $('#enableAngleFilter').checked;
+
+        hilega_buy_rsi = parseInt($('#hilegaBuyRsi').value) || 10;
+        hilega_sell_rsi = parseInt($('#hilegaSellRsi').value) || 90;
+
+        hilega_rsi_mode = $('#hilegaRsiMode').value;
+        alma_fixed_rsi_length = parseInt($('#almaFixedRsiLength').value) || 11;
+        alma_fixed_vwma_length = parseInt($('#almaFixedVwmaLength').value) || 21;
+        alma_fixed_tema_length = parseInt($('#almaFixedTemaLength').value) || 10;
+
+        const isAllActive = $('#allScannersBtn').classList.contains('active');
+        const selectedScanners = isAllActive ? [] : Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
+
+        if (timeframes.length === 0) {
+            showToast('Select at least one timeframe', 'warning');
+            return;
+        }
+        if (!isAllActive && selectedScanners.length === 0) {
+            showToast('Select at least one scanner type', 'warning');
+            return;
+        }
+
+        if (isAllActive) {
+            scanner_type = 'all';
+        } else if (selectedScanners.length === 1) {
+            scanner_type = selectedScanners[0];
+        } else {
+            scanner_type = selectedScanners;
+        }
+
+        const scannerLabelsMap = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'conflict_bar1': 'Bar+1 Action', 'gap': 'Gap' };
+        scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabelsMap[s] || s).join(' + ') : (scannerLabelsMap[selectedScanners[0]] || selectedScanners[0]));
+
+        // Save for future Refresh rescans — persisted to localStorage so it survives page reloads
+        lastScanConfig = {
+            crypto_count, timeframes, adaptation_speed, min_bars_between, ma_type,
+            enable_regime_filter, enable_volume_filter, enable_angle_filter,
+            hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
+            alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+            scanner_type, scannerLabel
+        };
+        try { localStorage.setItem('lastScanConfig', JSON.stringify(lastScanConfig)); } catch { /* storage unavailable */ }
     }
 
+    // ── Lock UI and clear dashboard immediately ──
     scanRunning = true;
+    $('#refreshBtn').disabled = true;
     const btn = $('#runScanBtn');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Scanning...</span>';
     btn.classList.remove('pulse-glow');
+
+    clearDashboard();
 
     // Show progress bar
     const progressWrap = $('#scanProgressWrap');
     progressWrap.classList.remove('hidden');
     updateProgress(0, 'Starting scan...');
 
-    // Clear previous results
-    allResults = [];
-    allHilegaResults = [];
-    allCrossResults = [];
-    renderResults();
-    renderHilegaResults();
-    renderCrossResults();
-    updateStats();
-
-    // Add scan start log
-    const scannerLabels = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'conflict_bar1': 'Bar+1 Action' };
-    const scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabels[s] || s).join(' + ') : (scannerLabels[selectedScanners[0]] || selectedScanners[0]));
     addLogLine('info', `🔄 CRYPTO SCAN IN PROGRESS — Top ${crypto_count} Coins | TFs: ${timeframes.join(', ')} | Scanner: ${scannerLabel} | MA: ${ma_type} | Speed: ${adaptation_speed} | MinBars: ${min_bars_between}`);
 
     // Start log polling
@@ -844,37 +1139,32 @@ async function runScan() {
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
 
         const data = await res.json();
-        allResults = data.data || [];
+        const rawData = data.data || [];
+        allConflictResults = rawData.filter(r => isConflictScanner(r.Scanner));
+        allResults = rawData.filter(r => !isConflictScanner(r.Scanner));
         allHilegaResults = data.hilega_data || [];
         allCrossResults = data.cross_data || [];
+        allGapResults = data.gap_data || [];
 
-        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length;
+        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length + allGapResults.length;
 
         updateProgress(100, 'Scan complete!');
-        if (allHilegaResults.length > 0) {
-            addLogLine('success', `✅ SCAN COMPLETED — ${allHilegaResults.length} HILEGA signal(s) found`);
-        } else if (allCrossResults.length > 0) {
-            addLogLine('success', `✅ SCAN COMPLETED — ${allCrossResults.length} Cross signal(s) found`);
-        } else {
-            addLogLine('success', `✅ SCAN COMPLETED — ${allResults.length} signal(s) found`);
-        }
+        addLogLine('success', `✅ SCAN COMPLETED — ${allResults.length} AMA/Qwen | ${allConflictResults.length} Conflict | ${allHilegaResults.length} HILEGA | ${allCrossResults.length} Cross | ${allGapResults.length} Gap signal(s) found`);
 
         populateTfFilter();
         populateHilegaTfFilter();
         populateCrossTfFilter();
+        populateConflictTfFilter();
+        populateGapTfFilter();
         renderResults();
         renderHilegaResults();
         renderCrossResults();
+        renderConflictResults();
+        renderGapResults();
         updateStats();
         updateLastScanTime(new Date().toISOString());
 
-        if (allHilegaResults.length > 0) {
-            showToast(`Scan complete! ${allHilegaResults.length} HILEGA signal(s) found.`, 'success');
-        } else if (allCrossResults.length > 0) {
-            showToast(`Scan complete! ${allCrossResults.length} Cross signal(s) found.`, 'success');
-        } else {
-            showToast(`Scan complete! ${allResults.length} signal(s) found.`, 'success');
-        }
+        showToast(`Scan complete! ${totalSignals} total signal(s) found.`, 'success');
 
         // Switch to dashboard tab to show results
         if (totalSignals > 0) {
@@ -896,6 +1186,7 @@ async function runScan() {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-play"></i> <span>Run Scanner</span>';
         btn.classList.add('pulse-glow');
+        $('#refreshBtn').disabled = false;
         stopLogPolling();
 
         setTimeout(() => {
@@ -962,11 +1253,18 @@ function addLogLine(cls, msg) {
 // FILTER CONTROLS
 // ══════════════════════════════════════════════════════════════
 function initFilterControls() {
+    // Stat card click filters
+    $('#totalSignalCard').addEventListener('click', () => applyGlobalSignalFilter('all'));
+    $('#longSignalCard').addEventListener('click', () => applyGlobalSignalFilter('LONG'));
+    $('#shortSignalCard').addEventListener('click', () => applyGlobalSignalFilter('SHORT'));
+
     // Signal filter chips
     $$('#signalFilterChips .chip').forEach(chip => {
         chip.addEventListener('click', () => {
             $$('#signalFilterChips .chip').forEach(c => c.classList.remove('active'));
             chip.classList.add('active');
+            // Clear stat card active state when using per-table filter
+            $$('.stat-card.clickable-stat').forEach(c => c.classList.remove('filter-active'));
             renderResults();
         });
     });
@@ -1123,6 +1421,65 @@ function initFilterControls() {
             renderCrossResults();
         });
     });
+
+    // ═══ CONFLICT FILTER CONTROLS ═══
+
+    // Conflict signal filter chips
+    $$('#conflictSignalFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#conflictSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            $$('.stat-card.clickable-stat').forEach(c => c.classList.remove('filter-active'));
+            renderConflictResults();
+        });
+    });
+
+    // Conflict type filter chips
+    $$('#conflictTypeFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#conflictTypeFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            renderConflictResults();
+        });
+    });
+
+    // Conflict search
+    let conflictSearchTimeout;
+    $('#conflictSearchInput').addEventListener('input', () => {
+        clearTimeout(conflictSearchTimeout);
+        conflictSearchTimeout = setTimeout(renderConflictResults, 200);
+    });
+
+    // Conflict timeframe filter
+    $('#conflictTfFilter').addEventListener('change', renderConflictResults);
+
+    // Conflict column sorting
+    $$('#conflictSignalsTable th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const colMap = {
+                name: 'Crypto Name',
+                timeframe: 'Timeperiod',
+                signal: 'Signal',
+                angle: 'Angle',
+                temagap: 'TEMA Gap',
+                rsi: 'RSI',
+                change: 'Daily Change',
+                scanner: 'Scanner'
+            };
+            const col = colMap[th.dataset.col];
+            if (currentConflictSort.col === col) {
+                currentConflictSort.asc = !currentConflictSort.asc;
+            } else {
+                currentConflictSort.col = col;
+                currentConflictSort.asc = true;
+            }
+            $$('#conflictSignalsTable th.sortable').forEach(t => {
+                t.classList.remove('sorted-asc', 'sorted-desc');
+            });
+            th.classList.add(currentConflictSort.asc ? 'sorted-asc' : 'sorted-desc');
+            renderConflictResults();
+        });
+    });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1196,6 +1553,28 @@ function exportHilegaCSV() {
     a.click();
     URL.revokeObjectURL(url);
     showToast('Hilega CSV exported', 'success');
+}
+
+function exportGapCSV() {
+    if (allGapResults.length === 0) {
+        showToast('No Gap data to export', 'warning');
+        return;
+    }
+    const headers = ['Asset', 'Timeframe', 'Signal', 'Gap Type', 'Gap Size', 'Gap High', 'Gap Low', 'Daily Change', 'Candle', 'Timestamp'];
+    const rows = allGapResults.map(r => [
+        r['Crypto Name'], r.Timeperiod, r.Signal,
+        r['Gap Type'] || '', r['Gap Size'] || '',
+        r['Gap High'] || '', r['Gap Low'] || '',
+        r['Daily Change'] || '', r.Candle || '', r.Timestamp
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `gemini_gap_scan_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Gap CSV exported', 'success');
 }
 
 // ══════════════════════════════════════════════════════════════

@@ -13,7 +13,7 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css?v=9">
-    <link rel="stylesheet" href="modern-config.css?v=1">
+    <link rel="stylesheet" href="modern-config.css?v=2">
 </head>
 
 <body>
@@ -110,7 +110,7 @@
 
             <!-- Stats Row -->
             <div class="stats-grid">
-                <div class="stat-card" data-accent="cyan">
+                <div class="stat-card clickable-stat" id="totalSignalCard" data-accent="cyan" title="Show all signals">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-signal"></i>
                     </div>
@@ -120,7 +120,7 @@
                     </div>
                     <div class="stat-sparkline" id="sparkTotal"></div>
                 </div>
-                <div class="stat-card" data-accent="green">
+                <div class="stat-card clickable-stat" id="longSignalCard" data-accent="green" title="Filter: Long signals only">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-arrow-trend-up"></i>
                     </div>
@@ -130,7 +130,7 @@
                     </div>
                     <div class="stat-sparkline" id="sparkLong"></div>
                 </div>
-                <div class="stat-card" data-accent="red">
+                <div class="stat-card clickable-stat" id="shortSignalCard" data-accent="red" title="Filter: Short signals only">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-arrow-trend-down"></i>
                     </div>
@@ -164,7 +164,7 @@
             <!-- Signal Results Table -->
             <div class="card" id="signalsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-bolt"></i> Detected Signals</h2>
+                    <h2><i class="fas fa-bolt"></i> AMA Pro Signals</h2>
                     <div class="card-actions">
                         <button class="btn btn-sm btn-ghost" id="exportCsvBtn">
                             <i class="fas fa-download"></i> Export
@@ -198,8 +198,6 @@
                         <button class="chip" data-filter="AMA Pro Now">AMA Pro Now</button>
                         <button class="chip" data-filter="Qwen Now">Qwen Now</button>
                         <button class="chip" data-filter="Both Now">Both Now</button>
-                        <button class="chip" data-filter="Long Conflict">Long Conflict</button>
-                        <button class="chip" data-filter="Short Conflict">Short Conflict</button>
                     </div>
                 </div>
 
@@ -263,7 +261,7 @@
             <!-- Hilega Signal Results Table -->
             <div class="card" id="hilegaSignalsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-chart-line"></i> Detected Signals Hilega</h2>
+                    <h2><i class="fas fa-chart-line"></i> Hilega Signals</h2>
                     <div class="card-actions">
                         <button class="btn btn-sm btn-ghost" id="exportHilegaCsvBtn">
                             <i class="fas fa-download"></i> Export
@@ -349,7 +347,7 @@
             <!-- Cross Signal Results Table -->
             <div class="card" id="crossSignalsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-exchange-alt"></i> Detected Signals Cross</h2>
+                    <h2><i class="fas fa-exchange-alt"></i> RSI - VWMA Cross Signals</h2>
                 </div>
 
                 <!-- Filters -->
@@ -432,6 +430,162 @@
                 </div>
                 <div class="table-footer">
                     <span id="crossResultCount">0 results</span>
+                </div>
+            </div>
+
+            <!-- Conflict Signal Results Table -->
+            <div class="card" id="conflictSignalsCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-code-branch"></i> Conflict Signals</h2>
+                    <div class="card-actions">
+                        <button class="btn btn-sm btn-ghost" id="exportConflictCsvBtn">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-bar">
+                    <div class="search-input-wrap">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="conflictSearchInput" placeholder="Search signals..." autocomplete="off">
+                    </div>
+                    <div class="filter-chips" id="conflictSignalFilterChips">
+                        <button class="chip active" data-filter="all">All</button>
+                        <button class="chip" data-filter="LONG">
+                            <span class="chip-dot green"></span> Long
+                        </button>
+                        <button class="chip" data-filter="SHORT">
+                            <span class="chip-dot red"></span> Short
+                        </button>
+                    </div>
+                    <select class="filter-dropdown" id="conflictTfFilter">
+                        <option value="all">All Timeframes</option>
+                    </select>
+                    <div class="filter-chips" id="conflictTypeFilterChips">
+                        <button class="chip active" data-filter="all">All Types</button>
+                        <button class="chip" data-filter="Long Conflict">Long Conflict</button>
+                        <button class="chip" data-filter="Short Conflict">Short Conflict</button>
+                        <button class="chip" data-filter="Bar+1">Bar+1</button>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="table-wrap">
+                    <table id="conflictSignalsTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-col="name">
+                                    <span>Asset</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="timeframe">
+                                    <span>Timeframe</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="signal">
+                                    <span>Signal</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="angle">
+                                    <span>Angle</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="temagap">
+                                    <span>TEMA Gap</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="rsi">
+                                    <span>RSI</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="change">
+                                    <span>Daily Chg</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="scanner">
+                                    <span>Type</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th>MA Type</th>
+                                <th>Timestamp</th>
+                                <th>Candle</th>
+                            </tr>
+                        </thead>
+                        <tbody id="conflictSignalsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div class="empty-state" id="conflictEmptyState">
+                        <i class="fas fa-satellite-dish"></i>
+                        <p>No Conflict signals detected yet</p>
+                        <span>Run a Conflict scan to detect signals</span>
+                    </div>
+                </div>
+                <div class="table-footer">
+                    <span id="conflictResultCount">0 results</span>
+                </div>
+            </div>
+
+            <!-- Gap Signals -->
+            <div class="card" id="gapSignalsCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-ruler-combined"></i> Gap Signals</h2>
+                    <div class="card-actions">
+                        <button class="btn btn-sm btn-ghost" id="exportGapCsvBtn">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-bar">
+                    <div class="search-input-wrap">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="gapSearchInput" placeholder="Search signals..." autocomplete="off">
+                    </div>
+                    <div class="filter-chips" id="gapSignalFilterChips">
+                        <button class="chip active" data-filter="all">All</button>
+                        <button class="chip" data-filter="LONG">
+                            <span class="chip-dot green"></span> Gap Up
+                        </button>
+                        <button class="chip" data-filter="SHORT">
+                            <span class="chip-dot red"></span> Gap Down
+                        </button>
+                    </div>
+                    <select class="filter-dropdown" id="gapTfFilter">
+                        <option value="all">All Timeframes</option>
+                    </select>
+                </div>
+
+                <!-- Table -->
+                <div class="table-wrap">
+                    <table id="gapSignalsTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-col="name"><span>Asset</span><i class="fas fa-sort sort-icon"></i></th>
+                                <th class="sortable" data-col="timeframe"><span>Timeframe</span><i class="fas fa-sort sort-icon"></i></th>
+                                <th class="sortable" data-col="signal"><span>Signal</span><i class="fas fa-sort sort-icon"></i></th>
+                                <th class="sortable" data-col="gaptype"><span>Type</span><i class="fas fa-sort sort-icon"></i></th>
+                                <th class="sortable" data-col="gapsize"><span>Gap Size</span><i class="fas fa-sort sort-icon"></i></th>
+                                <th><span>Gap Zone</span></th>
+                                <th class="sortable" data-col="change"><span>Daily Chg</span><i class="fas fa-sort sort-icon"></i></th>
+                                <th>Candle</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gapSignalsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div class="empty-state" id="gapEmptyState">
+                        <i class="fas fa-satellite-dish"></i>
+                        <p>No Gap signals detected yet</p>
+                        <span>Run a Gap scan to detect unfilled price gaps</span>
+                    </div>
+                </div>
+                <div class="table-footer">
+                    <span id="gapResultCount">0 results</span>
                 </div>
             </div>
         </section>
@@ -573,6 +727,7 @@
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_long">Long Conflict</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_short">Short Conflict</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_bar1">Bar+1 Action</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="gap">Gap</button>
                                 </div>
                                 <span class="hint-modern" style="margin-top: 12px;">Select scanner strategies for signal detection</span>
                             </div>
@@ -768,7 +923,7 @@
      ════════════════════════════════════════════════════════════════════ -->
     <div id="toastContainer"></div>
 
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=18"></script>
 </body>
 
 </html>

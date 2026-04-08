@@ -44,6 +44,7 @@ latest_scan = {
     "results": [],
     "hilega_results": [],
     "cross_results": [],
+    "gap_results": [],
     "scan_time": None,
     "duration": None
 }
@@ -112,9 +113,10 @@ async def trigger_scan(request: ScanRequest):
         duration = round(time.time() - start_time, 2)
         scan_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Separate HILEGA, Cross, and AMA/Qwen results
+        # Separate HILEGA, Cross, Gap, and AMA/Qwen results
         hilega_results = []
         cross_results = []
+        gap_results = []
         ama_qwen_results = []
 
         for result in results:
@@ -123,6 +125,8 @@ async def trigger_scan(request: ScanRequest):
                 hilega_results.append(result)
             elif 'CROSS' in scanner_label:
                 cross_results.append(result)
+            elif scanner_label == 'GAP':
+                gap_results.append(result)
             else:
                 ama_qwen_results.append(result)
 
@@ -130,15 +134,17 @@ async def trigger_scan(request: ScanRequest):
         latest_scan["results"] = ama_qwen_results
         latest_scan["hilega_results"] = hilega_results
         latest_scan["cross_results"] = cross_results
+        latest_scan["gap_results"] = gap_results
         latest_scan["scan_time"] = scan_time
         latest_scan["duration"] = duration
 
-        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen signal(s), {len(hilega_results)} HILEGA signal(s), and {len(cross_results)} Cross signal(s).")
+        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen signal(s), {len(hilega_results)} HILEGA signal(s), {len(cross_results)} Cross signal(s), and {len(gap_results)} Gap signal(s).")
         return {
             "status": "success",
             "data": ama_qwen_results,
             "hilega_data": hilega_results,
             "cross_data": cross_results,
+            "gap_data": gap_results,
             "scan_time": scan_time,
             "duration": duration
         }
@@ -153,6 +159,7 @@ async def get_results():
         "results": latest_scan["results"],
         "hilega_results": latest_scan["hilega_results"],
         "cross_results": latest_scan["cross_results"],
+        "gap_results": latest_scan["gap_results"],
         "scan_time": latest_scan["scan_time"],
         "duration": latest_scan["duration"]
     }

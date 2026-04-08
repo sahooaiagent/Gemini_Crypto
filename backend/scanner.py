@@ -2344,6 +2344,70 @@ def apply_qwen_scanner(df, tf_input="1 day", use_current_candle=False, **kwargs)
         return None, None, None, None, None, None
 
 # =============================================================================
+# GAP SCANNER
+# =============================================================================
+
+def apply_gap_scanner(df, tf_input='15min'):
+    """
+    Gap Scanner: Detects unfilled price gaps between consecutive confirmed candles.
+
+    Gap Up  : gap_candle.low  > prev_candle.high  →  LONG  signal
+    Gap Down: gap_candle.high < prev_candle.low   →  SHORT signal
+
+    A gap is reported only when it remains UNFILLED, i.e. current price has not
+    retraced back into the gap zone.
+
+    Returns:
+        signal    : 'LONG', 'SHORT', or None
+        gap_pct   : size of the gap as a % of the reference boundary
+        gap_high  : upper price boundary of the gap zone
+        gap_low   : lower price boundary of the gap zone
+        candle_ts : ISO-style timestamp string of the gap candle
+    """
+    if df is None or len(df) < 3:
+        return None, None, None, None, None
+
+    try:
+        # .iloc[-1] is the still-forming candle — skip it for confirmed signals
+        gap_candle  = df.iloc[-2]   # candle where the gap appeared
+        prev_candle = df.iloc[-3]   # candle immediately before it
+        current     = df.iloc[-1]   # latest bar (for the "unfilled" price check)
+
+        g_low   = float(gap_candle['low'])
+        g_high  = float(gap_candle['high'])
+        p_low   = float(prev_candle['low'])
+        p_high  = float(prev_candle['high'])
+        cur_close = float(current['close'])
+
+        try:
+            candle_ts = str(gap_candle.name)[:16]
+        except Exception:
+            candle_ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # ── Gap Up ──
+        if g_low > p_high:
+            gap_low  = p_high          # bottom of gap zone
+            gap_high = g_low           # top of gap zone
+            gap_pct  = ((gap_high - gap_low) / gap_low) * 100
+            # Unfilled as long as price hasn't fallen back to gap_low
+            if cur_close > gap_low:
+                return 'LONG', gap_pct, gap_high, gap_low, candle_ts
+
+        # ── Gap Down ──
+        elif g_high < p_low:
+            gap_low  = g_high          # bottom of gap zone
+            gap_high = p_low           # top of gap zone
+            gap_pct  = ((gap_high - gap_low) / gap_high) * 100
+            # Unfilled as long as price hasn't risen back to gap_high
+            if cur_close < gap_high:
+                return 'SHORT', gap_pct, gap_high, gap_low, candle_ts
+
+        return None, None, None, None, None
+
+    except Exception:
+        return None, None, None, None, None
+
+# =============================================================================
 # MAIN SCAN ENTRY POINT
 # =============================================================================
 
@@ -2386,6 +2450,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_conflict_long  = 'conflict_long'  in scanner_type or 'all' in scanner_type
         run_conflict_short = 'conflict_short' in scanner_type or 'all' in scanner_type
         run_conflict_bar1  = 'conflict_bar1'  in scanner_type or 'all' in scanner_type
+        run_gap = 'gap' in scanner_type or 'all' in scanner_type
     else:
         # Single scanner type (original logic)
         run_ama = scanner_type in ('ama_pro', 'both', 'all')
@@ -2399,6 +2464,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_conflict_long  = scanner_type in ('conflict_long',  'all')
         run_conflict_short = scanner_type in ('conflict_short', 'all')
         run_conflict_bar1  = scanner_type in ('conflict_bar1',  'all')
+        run_gap = scanner_type in ('gap', 'all')
 
     async with semaphore:
         for tf in timeframes:
@@ -2772,6 +2838,29 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                 'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 'Scanner': 'RSI CROSS DN VWMA'
                             })
+
+                # ── GAP SCANNER LOGIC ──
+                if run_gap and len(df) >= 3:
+                    gap_signal, gap_pct, gap_high, gap_low, gap_ts = await loop.run_in_executor(
+                        executor,
+                        lambda tf=tf: apply_gap_scanner(df.copy(), tf_input=tf)
+                    )
+                    if gap_signal:
+                        gap_type = "Gap Up" if gap_signal == 'LONG' else "Gap Down"
+                        results_list.append({
+                            'Crypto Name': symbol,
+                            'Timeperiod': tf,
+                            'Signal': gap_signal,
+                            'Gap Type': gap_type,
+                            'Gap Size': f"{gap_pct:.3f}%" if gap_pct is not None else "N/A",
+                            'Gap High': f"{gap_high:.4f}" if gap_high is not None else "N/A",
+                            'Gap Low': f"{gap_low:.4f}" if gap_low is not None else "N/A",
+                            'Daily Change': daily_change,
+                            'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'Candle': gap_ts or 'N/A',
+                            'Scanner': 'GAP'
+                        })
+                        logging.info(f"  Gap Scanner | {symbol} | TF={tf} | {gap_type} | Size={gap_pct:.3f}% | Zone={gap_low:.4f}-{gap_high:.4f}")
 
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
