@@ -748,7 +748,7 @@ def get_logs():
 async def get_market_data():
     """Fetch current market data for top crypto pairs (Async)"""
     try:
-        top_coins = await scanner.get_top_binance_symbols(limit=10)
+        top_coins = await scanner.get_top_binance_symbols(limit=20)
         results = []
         for coin in top_coins:
             price = coin.get('price')

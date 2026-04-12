@@ -178,7 +178,10 @@ async function fetchMarketData() {
         if (res.ok) {
             const data = await res.json();
             if (data.indices) {
-                CRYPTO_TICKERS = data.indices;
+                CRYPTO_TICKERS = data.indices
+                    .filter(item => !item.name || !item.name.toUpperCase().includes('USDC'))
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .slice(0, 20);
                 renderTickerTape();
                 updatePerformanceStatus();
             }

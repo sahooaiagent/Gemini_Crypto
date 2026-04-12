@@ -444,7 +444,7 @@ body {
     display: flex;
     gap: 50px;
     white-space: nowrap;
-    animation: tickerScroll 30s linear infinite;
+    animation: tickerScroll 45s linear infinite;
     padding-left: 100%;
 }
 
