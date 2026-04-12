@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initFilterControls();
     initMobileMenu();
     initThemeToggle();
+    initTickerSpeedControl();
     setupPerformanceControls();
     setConnectionStatus(true);
 
@@ -2454,4 +2455,24 @@ function updateThemeIcon(icon, theme) {
         icon.classList.remove('fa-sun');
         icon.classList.add('fa-moon');
     }
+}
+
+// ══════════════════════════════════════════════════════════════
+// TICKER SPEED CONTROL
+// ══════════════════════════════════════════════════════════════
+function initTickerSpeedControl() {
+    const speedSlider = $('#tickerSpeed');
+    if (!speedSlider) return;
+
+    // Load saved speed or default to 45s
+    const savedSpeed = localStorage.getItem('tickerSpeed') || '45';
+    speedSlider.value = savedSpeed;
+    document.documentElement.style.setProperty('--ticker-speed', savedSpeed + 's');
+
+    // Update speed on slider change
+    speedSlider.addEventListener('input', (e) => {
+        const speed = e.target.value;
+        document.documentElement.style.setProperty('--ticker-speed', speed + 's');
+        localStorage.setItem('tickerSpeed', speed);
+    });
 }

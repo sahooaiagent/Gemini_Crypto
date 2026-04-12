@@ -444,7 +444,7 @@ body {
     display: flex;
     gap: 50px;
     white-space: nowrap;
-    animation: tickerScroll 45s linear infinite;
+    animation: tickerScroll var(--ticker-speed, 45s) linear infinite;
     padding-left: 100%;
 }
 
@@ -816,6 +816,53 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+.speed-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-surface);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--glass-border);
+}
+
+.speed-control label {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.speed-control input[type="range"] {
+    width: 80px;
+    height: 4px;
+    background: var(--bg-hover);
+    border-radius: 2px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.speed-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--cyan);
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 229, 255, 0.3);
+}
+
+.speed-control input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--cyan);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 229, 255, 0.3);
 }
 
 .live-clock {
