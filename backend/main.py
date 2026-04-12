@@ -308,6 +308,8 @@ async def get_trade_setups():
                     # ── Try LONG setup ───────────────────────────────────────
                     long_entry  = current
                     long_sl     = support * 0.998          # just below nearest support
+                    if long_sl >= long_entry:
+                        long_sl = current * 0.99          # fallback when price has moved below prior support
                     long_tp1    = current + (high_target - current) * 0.5
                     long_tp2    = high_target              # target 1h high
                     long_risk   = long_entry - long_sl
@@ -317,6 +319,8 @@ async def get_trade_setups():
                     # ── Try SHORT setup ──────────────────────────────────────
                     short_entry  = current
                     short_sl     = resistance * 1.002      # just above nearest resistance
+                    if short_sl <= short_entry:
+                        short_sl = current * 1.01       # fallback when price has moved above prior resistance
                     short_tp1    = current - (current - low_target) * 0.5
                     short_tp2    = low_target              # target 1h low
                     short_risk   = short_sl - short_entry
@@ -526,6 +530,8 @@ async def get_market_heatmap():
             # ── LONG Setup ──────────────────────────────────────────
             long_entry = current
             long_sl = support * 0.998
+            if long_sl >= long_entry:
+                long_sl = current * 0.99
             long_tp1 = current + (target_high - current) * 0.4
             long_tp2 = target_high
             long_risk = long_entry - long_sl
@@ -535,6 +541,8 @@ async def get_market_heatmap():
             # ── SHORT Setup ─────────────────────────────────────────
             short_entry = current
             short_sl = resistance * 1.002
+            if short_sl <= short_entry:
+                short_sl = current * 1.01
             short_tp1 = current - (current - target_low) * 0.4
             short_tp2 = target_low
             short_risk = short_sl - short_entry
