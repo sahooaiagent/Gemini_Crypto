@@ -752,7 +752,16 @@ async def get_market_data():
         results = []
         for coin in top_coins:
             price = coin.get('price')
-            price_str = f"{price:,.2f}" if price is not None else "N/A"
+            if price is None:
+                price_str = "N/A"
+            elif price >= 1000:
+                price_str = f"{price:,.2f}"
+            elif price >= 1:
+                price_str = f"{price:.4f}"
+            elif price >= 0.01:
+                price_str = f"{price:.4f}"
+            else:
+                price_str = f"{price:.6f}"
             change = coin.get('change', 0)
             if change is None:
                 change = 0
