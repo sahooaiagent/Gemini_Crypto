@@ -13,7 +13,7 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css?v=9">
-    <link rel="stylesheet" href="modern-config.css?v=2">
+    <link rel="stylesheet" href="modern-config.css?v=1">
 </head>
 
 <body>
@@ -60,6 +60,11 @@
             <a class="nav-link" data-tab="scanner" id="nav-scanner">
                 <div class="nav-icon"><i class="fas fa-radar"></i></div>
                 <span>Scanner</span>
+                <div class="nav-indicator"></div>
+            </a>
+            <a class="nav-link" data-tab="performance" id="nav-performance">
+                <div class="nav-icon"><i class="fas fa-tachometer-alt"></i></div>
+                <span>Performance</span>
                 <div class="nav-indicator"></div>
             </a>
         </nav>
@@ -110,7 +115,7 @@
 
             <!-- Stats Row -->
             <div class="stats-grid">
-                <div class="stat-card clickable-stat" id="totalSignalCard" data-accent="cyan" title="Show all signals">
+                <div class="stat-card" data-accent="cyan">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-signal"></i>
                     </div>
@@ -120,7 +125,7 @@
                     </div>
                     <div class="stat-sparkline" id="sparkTotal"></div>
                 </div>
-                <div class="stat-card clickable-stat" id="longSignalCard" data-accent="green" title="Filter: Long signals only">
+                <div class="stat-card" data-accent="green">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-arrow-trend-up"></i>
                     </div>
@@ -130,7 +135,7 @@
                     </div>
                     <div class="stat-sparkline" id="sparkLong"></div>
                 </div>
-                <div class="stat-card clickable-stat" id="shortSignalCard" data-accent="red" title="Filter: Short signals only">
+                <div class="stat-card" data-accent="red">
                     <div class="stat-icon-wrap">
                         <i class="fas fa-arrow-trend-down"></i>
                     </div>
@@ -148,16 +153,6 @@
                         <span class="stat-value" id="lastScanTime">—</span>
                         <span class="stat-label">Last Scan</span>
                     </div>
-                </div>
-            </div>
-
-            <!-- Market Heatmap -->
-            <div class="card" id="heatmapCard">
-                <div class="card-header">
-                    <h2><i class="fas fa-th"></i> Market Heatmap</h2>
-                </div>
-                <div class="heatmap-grid" id="heatmapGrid">
-                    <!-- Populated by JS -->
                 </div>
             </div>
 
@@ -198,6 +193,8 @@
                         <button class="chip" data-filter="AMA Pro Now">AMA Pro Now</button>
                         <button class="chip" data-filter="Qwen Now">Qwen Now</button>
                         <button class="chip" data-filter="Both Now">Both Now</button>
+                        <button class="chip" data-filter="Long Conflict">Long Conflict</button>
+                        <button class="chip" data-filter="Short Conflict">Short Conflict</button>
                     </div>
                 </div>
 
@@ -241,6 +238,10 @@
                                 <th>MA Type</th>
                                 <th>Timestamp</th>
                                 <th>Candle</th>
+                                <th class="sortable" data-col="cprcategory">
+                                    <span>CPR</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="signalsBody">
@@ -258,10 +259,75 @@
                 </div>
             </div>
 
+            <!-- Conflict Signal Results Table -->
+            <div class="card" id="conflictSignalsCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-bolt"></i> Conflict Signals</h2>
+                    <div class="card-actions">
+                        <button class="btn btn-sm btn-ghost" id="exportConflictCsvBtn">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-bar">
+                    <div class="search-input-wrap">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="conflictSearchInput" placeholder="Search signals..." autocomplete="off">
+                    </div>
+                    <div class="filter-chips" id="conflictSignalFilterChips">
+                        <button class="chip active" data-filter="all">All</button>
+                        <button class="chip" data-filter="LONG">
+                            <span class="chip-dot green"></span> Long
+                        </button>
+                        <button class="chip" data-filter="SHORT">
+                            <span class="chip-dot red"></span> Short
+                        </button>
+                    </div>
+                    <select class="filter-dropdown" id="conflictTfFilter">
+                        <option value="all">All Timeframes</option>
+                    </select>
+                </div>
+
+                <!-- Table -->
+                <div class="table-wrap">
+                    <table id="conflictSignalsTable">
+                        <thead>
+                            <tr>
+                                <th>Asset</th>
+                                <th>Timeframe</th>
+                                <th>Signal</th>
+                                <th>Angle</th>
+                                <th>TEMA Gap</th>
+                                <th>RSI</th>
+                                <th>Daily Chg</th>
+                                <th>Conflict State</th>
+                                <th>MA Type</th>
+                                <th>Timestamp</th>
+                                <th>Candle</th>
+                                <th>CPR</th>
+                            </tr>
+                        </thead>
+                        <tbody id="conflictSignalsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div class="empty-state" id="conflictEmptyState">
+                        <i class="fas fa-satellite-dish"></i>
+                        <p>No Conflict signals detected yet</p>
+                        <span>Run a Long Conflict or Short Conflict scan to detect signals</span>
+                    </div>
+                </div>
+                <div class="table-footer">
+                    <span id="conflictResultCount">0 results</span>
+                </div>
+            </div>
+
             <!-- Hilega Signal Results Table -->
             <div class="card" id="hilegaSignalsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-chart-line"></i> Hilega Signals</h2>
+                    <h2><i class="fas fa-chart-line"></i> HILEGA Signals</h2>
                     <div class="card-actions">
                         <button class="btn btn-sm btn-ghost" id="exportHilegaCsvBtn">
                             <i class="fas fa-download"></i> Export
@@ -327,6 +393,10 @@
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
                                 <th>Timestamp</th>
+                                <th class="sortable" data-col="cprcategory">
+                                    <span>CPR</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="hilegaSignalsBody">
@@ -347,7 +417,7 @@
             <!-- Cross Signal Results Table -->
             <div class="card" id="crossSignalsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-exchange-alt"></i> RSI - VWMA Cross Signals</h2>
+                    <h2><i class="fas fa-exchange-alt"></i> RSI Cross Signals</h2>
                 </div>
 
                 <!-- Filters -->
@@ -395,8 +465,8 @@
                                     <span>Angle</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
-                                <th class="sortable" data-col="rsivwma">
-                                    <span>RSI-VWMA</span>
+                                <th class="sortable" data-col="rsidiff">
+                                    <span>RSI Diff</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
                                 <th class="sortable" data-col="rsi">
@@ -416,6 +486,14 @@
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
                                 <th>Timestamp</th>
+                                <th class="sortable" data-col="scanner">
+                                    <span>Scanner</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="cprcategory">
+                                    <span>CPR</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="crossSignalsBody">
@@ -430,162 +508,6 @@
                 </div>
                 <div class="table-footer">
                     <span id="crossResultCount">0 results</span>
-                </div>
-            </div>
-
-            <!-- Conflict Signal Results Table -->
-            <div class="card" id="conflictSignalsCard">
-                <div class="card-header">
-                    <h2><i class="fas fa-code-branch"></i> Conflict Signals</h2>
-                    <div class="card-actions">
-                        <button class="btn btn-sm btn-ghost" id="exportConflictCsvBtn">
-                            <i class="fas fa-download"></i> Export
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Filters -->
-                <div class="filters-bar">
-                    <div class="search-input-wrap">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="conflictSearchInput" placeholder="Search signals..." autocomplete="off">
-                    </div>
-                    <div class="filter-chips" id="conflictSignalFilterChips">
-                        <button class="chip active" data-filter="all">All</button>
-                        <button class="chip" data-filter="LONG">
-                            <span class="chip-dot green"></span> Long
-                        </button>
-                        <button class="chip" data-filter="SHORT">
-                            <span class="chip-dot red"></span> Short
-                        </button>
-                    </div>
-                    <select class="filter-dropdown" id="conflictTfFilter">
-                        <option value="all">All Timeframes</option>
-                    </select>
-                    <div class="filter-chips" id="conflictTypeFilterChips">
-                        <button class="chip active" data-filter="all">All Types</button>
-                        <button class="chip" data-filter="Long Conflict">Long Conflict</button>
-                        <button class="chip" data-filter="Short Conflict">Short Conflict</button>
-                        <button class="chip" data-filter="Bar+1">Bar+1</button>
-                    </div>
-                </div>
-
-                <!-- Table -->
-                <div class="table-wrap">
-                    <table id="conflictSignalsTable">
-                        <thead>
-                            <tr>
-                                <th class="sortable" data-col="name">
-                                    <span>Asset</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="timeframe">
-                                    <span>Timeframe</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="signal">
-                                    <span>Signal</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="angle">
-                                    <span>Angle</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="temagap">
-                                    <span>TEMA Gap</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="rsi">
-                                    <span>RSI</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="change">
-                                    <span>Daily Chg</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="scanner">
-                                    <span>Type</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th>MA Type</th>
-                                <th>Timestamp</th>
-                                <th>Candle</th>
-                            </tr>
-                        </thead>
-                        <tbody id="conflictSignalsBody">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
-                    <div class="empty-state" id="conflictEmptyState">
-                        <i class="fas fa-satellite-dish"></i>
-                        <p>No Conflict signals detected yet</p>
-                        <span>Run a Conflict scan to detect signals</span>
-                    </div>
-                </div>
-                <div class="table-footer">
-                    <span id="conflictResultCount">0 results</span>
-                </div>
-            </div>
-
-            <!-- Gap Signals -->
-            <div class="card" id="gapSignalsCard">
-                <div class="card-header">
-                    <h2><i class="fas fa-ruler-combined"></i> Gap Signals</h2>
-                    <div class="card-actions">
-                        <button class="btn btn-sm btn-ghost" id="exportGapCsvBtn">
-                            <i class="fas fa-download"></i> Export
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Filters -->
-                <div class="filters-bar">
-                    <div class="search-input-wrap">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="gapSearchInput" placeholder="Search signals..." autocomplete="off">
-                    </div>
-                    <div class="filter-chips" id="gapSignalFilterChips">
-                        <button class="chip active" data-filter="all">All</button>
-                        <button class="chip" data-filter="LONG">
-                            <span class="chip-dot green"></span> Gap Up
-                        </button>
-                        <button class="chip" data-filter="SHORT">
-                            <span class="chip-dot red"></span> Gap Down
-                        </button>
-                    </div>
-                    <select class="filter-dropdown" id="gapTfFilter">
-                        <option value="all">All Timeframes</option>
-                    </select>
-                </div>
-
-                <!-- Table -->
-                <div class="table-wrap">
-                    <table id="gapSignalsTable">
-                        <thead>
-                            <tr>
-                                <th class="sortable" data-col="name"><span>Asset</span><i class="fas fa-sort sort-icon"></i></th>
-                                <th class="sortable" data-col="timeframe"><span>Timeframe</span><i class="fas fa-sort sort-icon"></i></th>
-                                <th class="sortable" data-col="signal"><span>Signal</span><i class="fas fa-sort sort-icon"></i></th>
-                                <th class="sortable" data-col="gaptype"><span>Type</span><i class="fas fa-sort sort-icon"></i></th>
-                                <th class="sortable" data-col="gapsize"><span>Gap Size</span><i class="fas fa-sort sort-icon"></i></th>
-                                <th><span>Gap Zone</span></th>
-                                <th class="sortable" data-col="change"><span>Daily Chg</span><i class="fas fa-sort sort-icon"></i></th>
-                                <th>Candle</th>
-                                <th>Timestamp</th>
-                            </tr>
-                        </thead>
-                        <tbody id="gapSignalsBody">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
-                    <div class="empty-state" id="gapEmptyState">
-                        <i class="fas fa-satellite-dish"></i>
-                        <p>No Gap signals detected yet</p>
-                        <span>Run a Gap scan to detect unfilled price gaps</span>
-                    </div>
-                </div>
-                <div class="table-footer">
-                    <span id="gapResultCount">0 results</span>
                 </div>
             </div>
         </section>
@@ -650,6 +572,21 @@
                                 </div>
 
                                 <div class="form-group-modern">
+                                    <label class="label-modern">
+                                        <i class="fas fa-magic label-icon"></i>
+                                        Auto-Select MA Type
+                                    </label>
+                                    <div class="toggle-group-modern">
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="autoMaType" class="toggle-checkbox" checked>
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">Auto-Select MA Type</span>
+                                        </label>
+                                    </div>
+                                    <span class="hint-modern">Let the scanner pick the best MA per timeframe</span>
+                                </div>
+
+                                <div class="form-group-modern" id="maTypeGroup">
                                     <label for="maType" class="label-modern">
                                         <i class="fas fa-chart-line label-icon"></i>
                                         Moving Average Type
@@ -688,6 +625,41 @@
                                     </div>
                                     <span class="hint-modern">Toggle filters for signal quality</span>
                                 </div>
+
+                                <div class="form-group-modern">
+                                    <label class="label-modern">
+                                        <i class="fas fa-sliders-h label-icon"></i>
+                                        Enterprise Cross Filters
+                                    </label>
+                                    <div class="toggle-group-modern">
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="enableTemaFilter" class="toggle-checkbox">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">TEMA Direction</span>
+                                        </label>
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="enableVwapFilter" class="toggle-checkbox">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">VWAP Position</span>
+                                        </label>
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="enableVolumeCrossFilter" class="toggle-checkbox">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">Volume Confirm (1.2×)</span>
+                                        </label>
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="enableHtfRsiFilter" class="toggle-checkbox">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">HTF RSI Trend</span>
+                                        </label>
+                                        <label class="toggle-item-modern">
+                                            <input type="checkbox" id="enableCprNarrowFilter" class="toggle-checkbox">
+                                            <span class="toggle-slider"></span>
+                                            <span class="toggle-label">CPR Narrow Only 🔥</span>
+                                        </label>
+                                    </div>
+                                    <span class="hint-modern">Applied only to RSI Cross scanners · CPR Narrow = explosive breakout expected</span>
+                                </div>
                             </div>
                         </div>
 
@@ -714,20 +686,21 @@
                             </div>
                             <div class="section-content" id="scanner-type">
                                 <div class="scanner-type-chips-modern" id="scannerTypeChips">
-                                    <button class="chip-modern active scanner-chip" data-scanner="ama_pro">AMA Pro Pre</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="ama_pro">AMA Pro Pre</button>
                                     <button class="chip-modern scanner-chip" data-scanner="qwen">Qwen Pre</button>
                                     <button class="chip-modern scanner-chip" data-scanner="both">Both Pre</button>
-                                    <button class="chip-modern active scanner-chip" data-scanner="ama_pro_now">AMA Pro Now</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="ama_pro_now">AMA Pro Now</button>
                                     <button class="chip-modern scanner-chip" data-scanner="qwen_now">Qwen Now</button>
                                     <button class="chip-modern scanner-chip" data-scanner="both_now">Both Now</button>
                                     <button class="chip-modern scanner-chip" data-scanner="hilega_buy">HILEGA BUY</button>
                                     <button class="chip-modern scanner-chip" data-scanner="hilega_sell">HILEGA SELL</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_up_vwma">RSI Cross UP VWMA</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_dn_vwma">RSI Cross DN VWMA</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="rsi_cross_up_alma">RSI Cross UP ALMA</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="rsi_cross_dn_alma">RSI Cross DN ALMA</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_long">Long Conflict</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_short">Short Conflict</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_bar1">Bar+1 Action</button>
-                                    <button class="chip-modern scanner-chip" data-scanner="gap">Gap</button>
                                 </div>
                                 <span class="hint-modern" style="margin-top: 12px;">Select scanner strategies for signal detection</span>
                             </div>
@@ -749,12 +722,12 @@
                             </div>
                             <div class="section-content" id="timeframes">
                                 <div class="tf-chips-modern" id="tfChips">
-                                <button class="chip-modern active tf-chip" data-tf="5min">5m</button>
-                                <button class="chip-modern active tf-chip" data-tf="10min">10m</button>
-                                <button class="chip-modern active tf-chip" data-tf="15min">15m</button>
-                                <button class="chip-modern active tf-chip" data-tf="20min">20m</button>
-                                <button class="chip-modern active tf-chip" data-tf="25min">25m</button>
-                                <button class="chip-modern active tf-chip" data-tf="30min">30m</button>
+                                <button class="chip-modern tf-chip" data-tf="5min">5m</button>
+                                <button class="chip-modern tf-chip" data-tf="10min">10m</button>
+                                <button class="chip-modern tf-chip" data-tf="15min">15m</button>
+                                <button class="chip-modern tf-chip" data-tf="20min">20m</button>
+                                <button class="chip-modern tf-chip" data-tf="25min">25m</button>
+                                <button class="chip-modern tf-chip" data-tf="30min">30m</button>
                                 <button class="chip-modern tf-chip" data-tf="45min">45m</button>
                                 <button class="chip-modern tf-chip" data-tf="1hr">1h</button>
                                 <button class="chip-modern tf-chip" data-tf="2hr">2h</button>
@@ -915,6 +888,193 @@
             </div>
         </section>
 
+        <!-- ──── PERFORMANCE TAB ──── -->
+        <section class="tab-content" id="tab-performance">
+            <header class="page-header">
+                <div>
+                    <h1 class="page-title">Performance Analytics</h1>
+                    <p class="page-subtitle">Track live setups, market heatmaps, and trading performance</p>
+                </div>
+            </header>
+
+            <!-- Performance Summary -->
+            <div class="stats-grid" id="performanceSummaryGrid">
+                <div class="stat-card" data-accent="cyan">
+                    <div class="stat-icon-wrap">
+                        <i class="fas fa-chart-pie"></i>
+                    </div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="summaryTotalTrades">0</span>
+                        <span class="stat-label">Total Trades</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="green">
+                    <div class="stat-icon-wrap">
+                        <i class="fas fa-arrow-up-right-dots"></i>
+                    </div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="summaryProfitTrades">0</span>
+                        <span class="stat-label">Profit Trades</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="red">
+                    <div class="stat-icon-wrap">
+                        <i class="fas fa-arrow-down-right-dots"></i>
+                    </div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="summaryLossTrades">0</span>
+                        <span class="stat-label">Loss Trades</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="purple">
+                    <div class="stat-icon-wrap">
+                        <i class="fas fa-percent"></i>
+                    </div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="summaryWinRate">0%</span>
+                        <span class="stat-label">Win Rate</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="green">
+                    <div class="stat-icon-wrap">
+                        <i class="fas fa-coins"></i>
+                    </div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="summaryNetPnl">0%</span>
+                        <span class="stat-label">Net P/L</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="cyan">
+                    <div class="stat-icon-wrap">
+                        <i class="fas fa-calendar-alt"></i>
+                    </div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="summaryMonthlyTrades">0</span>
+                        <span class="stat-label">Month Trades</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="green">
+                    <div class="stat-icon-wrap">
+                        <i class="fas fa-calendar-check"></i>
+                    </div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="summaryMonthlyWinRate">0%</span>
+                        <span class="stat-label">Monthly Win Rate</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="purple">
+                    <div class="stat-icon-wrap">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="summaryMonthlyNetPnl">0%</span>
+                        <span class="stat-label"><span id="summaryMonthLabel">Current Month</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TOP 7 LIVE TRADE SETUPS ── -->
+            <div class="card" id="tradeSetupsCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-crosshairs"></i> Top 7 Live Trade Setups <span class="ts-timeframe-badge">15m entry · 1h target</span></h2>
+                    <div class="card-actions">
+                        <span id="tradeSetupsTimestamp" class="ts-timestamp"></span>
+                        <button class="btn btn-sm btn-ghost" id="refreshSetupsBtn" title="Refresh Setups">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div id="tradeSetupsGrid" class="ts-grid">
+                    <div class="ts-placeholder">
+                        <i class="fas fa-crosshairs"></i>
+                        <p>Run the scanner to generate live trade setups</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Market Heatmap -->
+            <div class="card" id="heatmapCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-th"></i> Market Heatmap <span class="ts-timeframe-badge">1h entry · 12h target</span></h2>
+                    <div class="card-actions">
+                        <span id="heatmapTimestamp" class="ts-timestamp"></span>
+                    </div>
+                </div>
+                <div class="heatmap-grid ts-grid" id="heatmapGrid">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Performance Tracker -->
+            <div class="card" id="performanceTrackerCard">
+                <div class="card-header">
+                    <h2 class="performance-heading"><i class="fas fa-tachometer-alt"></i> Performance Tracker</h2>
+                    <div class="card-actions">
+                    <div class="search-input-wrap" style="min-width:220px; margin-right:12px;">
+                        <i class="fas fa-search"></i>
+                        <input id="performanceSearchInput" type="search" placeholder="Search symbol, signal, status">
+                    </div>
+                    <select id="performanceMonthSelect" class="search-input-wrap" style="min-width:180px; padding: 10px 14px; background: var(--bg-elevated); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); color: var(--text-primary);">
+                        <option value="">Current month</option>
+                        <option value="2026-01">January 2026</option>
+                        <option value="2026-02">February 2026</option>
+                        <option value="2026-03">March 2026</option>
+                    </select>
+                    <span id="performanceDate" class="ts-timestamp"></span>
+                </div>
+                </div>
+                <div class="performance-wrap">
+                    <table class="performance-table" id="performanceTrackerTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="symbol">Symbol <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="signal">Signal <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="created_at">Recommended <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="entry">Entry <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="stop_loss">SL <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="target_1">T1 <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="target_2">T2 <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="status">Status <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="profit_loss">P/L <span class="sort-icon"></span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="9" class="empty-row">No performance trades tracked yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card" id="performanceHistoryCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-history"></i> Monthly Daily Performance Log</h2>
+                    <div class="card-actions">
+                        <span class="ts-timestamp">Showing daily totals for selected month</span>
+                    </div>
+                </div>
+                <div class="performance-wrap">
+                    <table class="performance-table" id="performanceHistoryTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Total Trades</th>
+                                <th>Profit Trades</th>
+                                <th>Loss Trades</th>
+                                <th>Win Rate</th>
+                                <th>Net P/L</th>
+                            </tr>
+                        </thead>
+                        <tbody id="performanceHistoryBody">
+                            <tr>
+                                <td colspan="6" class="empty-row">No daily performance history available.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
 
     </main>
 
@@ -923,7 +1083,7 @@
      ════════════════════════════════════════════════════════════════════ -->
     <div id="toastContainer"></div>
 
-    <script src="app.js?v=18"></script>
+    <script src="app.js?v=28"></script>
 </body>
 
 </html>

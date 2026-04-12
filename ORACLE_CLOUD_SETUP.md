@@ -80,7 +80,7 @@ Complete guide to deploy your Crypto Scanner on Oracle Cloud (100% FREE forever)
 
 ## PART 2: Configure Firewall (Security Rules)
 
-### Step 3: Open Port 8001 for Web Access
+### Step 3: Open Port 8002 for Web Access
 
 1. On your instance page, scroll to **"Primary VNIC"** section
 2. Click on the **Subnet** link (e.g., "subnet-...")
@@ -91,7 +91,7 @@ Complete guide to deploy your Crypto Scanner on Oracle Cloud (100% FREE forever)
    - **Source CIDR:** `0.0.0.0/0`
    - **IP Protocol:** TCP
    - **Source Port Range:** (leave empty)
-   - **Destination Port Range:** `8001`
+   - **Destination Port Range:** `8002`
    - **Description:** `Crypto Scanner Web Dashboard`
 6. Click **"Add Ingress Rules"**
 
@@ -154,8 +154,8 @@ rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 ### Step 7: Configure VM Firewall (iptables)
 
 ```bash
-# Allow incoming connections on port 8001
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8001 -j ACCEPT
+# Allow incoming connections on port 8002
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8002 -j ACCEPT
 sudo netfilter-persistent save
 ```
 
@@ -216,17 +216,17 @@ You should see:
   🚀 Gemini Scanner Enterprise — Starting Server
 ============================
 
-  Dashboard: http://0.0.0.0:8001
-  API Docs:  http://0.0.0.0:8001/docs
+  Dashboard: http://0.0.0.0:8002
+  API Docs:  http://0.0.0.0:8002/docs
 ```
 
 ### Step 11: Test from Your iPhone
 
 1. Open **Safari** on your iPhone
-2. Go to: `http://YOUR_PUBLIC_IP:8001`
+2. Go to: `http://YOUR_PUBLIC_IP:8002`
 3. You should see your Crypto Scanner dashboard!
 
-**Example:** `http://158.101.123.45:8001`
+**Example:** `http://158.101.123.45:8002`
 
 If it works, **CONGRATULATIONS!** 🎉
 
@@ -329,7 +329,7 @@ sudo systemctl restart crypto-scanner
    ```bash
    sudo apt install ufw -y
    sudo ufw allow 2222/tcp  # SSH (or 22 if you didn't change it)
-   sudo ufw allow 8001/tcp  # Web dashboard
+   sudo ufw allow 8002/tcp  # Web dashboard
    sudo ufw enable
    ```
 
@@ -351,7 +351,7 @@ sudo systemctl restart crypto-scanner
 
 2. **Check firewall rules:**
    ```bash
-   sudo iptables -L -n | grep 8001
+   sudo iptables -L -n | grep 8002
    ```
 
 3. **Check Oracle Cloud Security List** (Part 2, Step 3)
@@ -363,8 +363,8 @@ sudo systemctl restart crypto-scanner
 
 ### Port Already in Use?
 ```bash
-# Find what's using port 8001
-sudo lsof -i :8001
+# Find what's using port 8002
+sudo lsof -i :8002
 
 # Kill the process if needed
 sudo kill -9 <PID>
@@ -398,8 +398,8 @@ If you encounter issues:
 
 1. Check the **Troubleshooting** section above
 2. Review logs: `sudo journalctl -u crypto-scanner -n 100`
-3. Verify Oracle Cloud Security List has port 8001 open
-4. Ensure VM firewall allows port 8001
+3. Verify Oracle Cloud Security List has port 8002 open
+4. Ensure VM firewall allows port 8002
 
 ---
 
@@ -407,7 +407,7 @@ If you encounter issues:
 
 - [x] Oracle Cloud account created
 - [x] VM instance running
-- [x] Port 8001 open in Security List
+- [x] Port 8002 open in Security List
 - [x] SSH connection working
 - [x] Dependencies installed
 - [x] Application cloned from GitHub

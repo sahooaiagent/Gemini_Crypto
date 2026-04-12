@@ -277,6 +277,60 @@ def calculate_gaussian(series, length, sigma=2.0):
         result[i] = np.dot(window, weights)
     return pd.Series(result, index=series.index)
 
+def calculate_cpr(df):
+    """
+    Calculate Central Pivot Range (CPR) from the most recent completed candle.
+
+    Methodology (matches TradingView CPR indicator):
+      P   = (High + Low + Close) / 3          ← Pivot
+      BC  = (High + Low) / 2                  ← Bottom CPR
+      TC  = (P × 2) − BC                      ← Top CPR
+      Width % = |TC − BC| / P × 100
+
+    Width categories (matching Pine Script thresholds):
+      ≤ 0.20%  → Extreme Narrow  (explosive breakout expected)
+      ≤ 0.35%  → Narrow          (trending day expected)
+      ≤ 0.75%  → Normal
+      ≤ 1.00%  → Wide
+       > 1.00%  → Extreme Wide   (mean-reversion / chop likely)
+
+    Returns:
+        pivot (float), top_cpr (float), bot_cpr (float),
+        width_pct (float), category (str)
+    """
+    if df is None or len(df) < 2:
+        return None, None, None, None, 'N/A'
+
+    prev = df.iloc[-2]          # Last *closed* candle
+    H = float(prev['high'])
+    L = float(prev['low'])
+    C = float(prev['close'])
+
+    if H == 0 or L == 0 or C == 0:
+        return None, None, None, None, 'N/A'
+
+    P   = (H + L + C) / 3.0
+    BC  = (H + L) / 2.0
+    TC  = P * 2 - BC
+
+    top_cpr = max(TC, BC)
+    bot_cpr = min(TC, BC)
+    width_pct = (abs(top_cpr - bot_cpr) / P) * 100.0 if P > 0 else 0.0
+
+    if width_pct <= 0.20:
+        category = 'Extreme Narrow'
+    elif width_pct <= 0.35:
+        category = 'Narrow'
+    elif width_pct <= 0.75:
+        category = 'Normal'
+    elif width_pct <= 1.00:
+        category = 'Wide'
+    else:
+        category = 'Extreme Wide'
+
+    return P, top_cpr, bot_cpr, round(width_pct, 4), category
+
+
 def calculate_atr(high, low, close, length):
     """Average True Range using RMA (Wilder's smoothing)"""
     tr1 = high - low
@@ -1769,7 +1823,9 @@ def calculate_tema_of_series(series, length=10):
     ema3 = ema2.ewm(span=length, adjust=False).mean()
     return 3 * ema1 - 3 * ema2 + ema3
 
-def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15min'):
+def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15min', signal_line='vwma',
+                                      enable_tema_filter=False, enable_vwap_filter=False,
+                                      enable_volume_filter_cross=False, enable_htf_rsi_filter=False):
     """
     HILEGA Adaptive HTF Cross Scanner
     Detects RSI crossovers with VWMA using auto-adaptive parameters based on timeframe.
@@ -1885,36 +1941,41 @@ def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15mi
     # =================================================================
     # CROSSOVER DETECTION
     # =================================================================
-    # Check BOTH confirmed candle (index -2) and forming candle (index -1)
-    # crossover: rsi[i] > vwma[i] AND rsi[i-1] <= vwma[i-1]
-    # crossunder: rsi[i] < vwma[i] AND rsi[i-1] >= vwma[i-1]
+    # Select the signal line: VWMA (default) or ALMA
+    compare_series = alma_rsi if signal_line == 'alma' else vwma_rsi
 
-    if len(true_rsi) < 3 or len(vwma_rsi) < 3:
+    # Check BOTH confirmed candle (index -2) and forming candle (index -1)
+    # crossover: rsi[i] > compare[i] AND rsi[i-1] <= compare[i-1]
+    # crossunder: rsi[i] < compare[i] AND rsi[i-1] >= compare[i-1]
+
+    if len(true_rsi) < 3 or len(compare_series) < 3:
         return None, None, None, None, None, None, None
 
     # Get values for forming candle (index -1)
     forming_rsi = true_rsi.iloc[-1]
     forming_vwma = vwma_rsi.iloc[-1]
     forming_alma = alma_rsi.iloc[-1]
+    forming_compare = compare_series.iloc[-1]
 
     # Get values for confirmed candle (index -2)
     confirmed_rsi = true_rsi.iloc[-2]
     confirmed_vwma = vwma_rsi.iloc[-2]
     confirmed_alma = alma_rsi.iloc[-2]
+    confirmed_compare = compare_series.iloc[-2]
 
     # Get previous values for crossover detection
     prev_confirmed_rsi = true_rsi.iloc[-3]
-    prev_confirmed_vwma = vwma_rsi.iloc[-3]
+    prev_confirmed_compare = compare_series.iloc[-3]
     prev_forming_rsi = true_rsi.iloc[-2]
-    prev_forming_vwma = vwma_rsi.iloc[-2]
+    prev_forming_compare = compare_series.iloc[-2]
 
     # Detect crossover on CONFIRMED candle (previous closed candle)
-    confirmed_cross_up = (confirmed_rsi > confirmed_vwma) and (prev_confirmed_rsi <= prev_confirmed_vwma)
-    confirmed_cross_down = (confirmed_rsi < confirmed_vwma) and (prev_confirmed_rsi >= prev_confirmed_vwma)
+    confirmed_cross_up = (confirmed_rsi > confirmed_compare) and (prev_confirmed_rsi <= prev_confirmed_compare)
+    confirmed_cross_down = (confirmed_rsi < confirmed_compare) and (prev_confirmed_rsi >= prev_confirmed_compare)
 
     # Detect crossover on FORMING candle (current candle)
-    forming_cross_up = (forming_rsi > forming_vwma) and (prev_forming_rsi <= prev_forming_vwma)
-    forming_cross_down = (forming_rsi < forming_vwma) and (prev_forming_rsi >= prev_forming_vwma)
+    forming_cross_up = (forming_rsi > forming_compare) and (prev_forming_rsi <= prev_forming_compare)
+    forming_cross_down = (forming_rsi < forming_compare) and (prev_forming_rsi >= prev_forming_compare)
 
     signal = None
     candle_status = None
@@ -1924,26 +1985,26 @@ def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15mi
 
     # Priority: Confirmed candle first, then forming candle
     if scanner_mode == 'cross_up':
-        if confirmed_cross_up and not pd.isna(confirmed_rsi) and not pd.isna(confirmed_vwma):
+        if confirmed_cross_up and not pd.isna(confirmed_rsi) and not pd.isna(confirmed_compare):
             signal = 'LONG'
             candle_status = 'Confirmed'
             use_rsi = confirmed_rsi
             use_vwma = confirmed_vwma
             use_alma = confirmed_alma
-        elif forming_cross_up and not pd.isna(forming_rsi) and not pd.isna(forming_vwma):
+        elif forming_cross_up and not pd.isna(forming_rsi) and not pd.isna(forming_compare):
             signal = 'LONG'
             candle_status = 'Forming'
             use_rsi = forming_rsi
             use_vwma = forming_vwma
             use_alma = forming_alma
     elif scanner_mode == 'cross_down':
-        if confirmed_cross_down and not pd.isna(confirmed_rsi) and not pd.isna(confirmed_vwma):
+        if confirmed_cross_down and not pd.isna(confirmed_rsi) and not pd.isna(confirmed_compare):
             signal = 'SHORT'
             candle_status = 'Confirmed'
             use_rsi = confirmed_rsi
             use_vwma = confirmed_vwma
             use_alma = confirmed_alma
-        elif forming_cross_down and not pd.isna(forming_rsi) and not pd.isna(forming_vwma):
+        elif forming_cross_down and not pd.isna(forming_rsi) and not pd.isna(forming_compare):
             signal = 'SHORT'
             candle_status = 'Forming'
             use_rsi = forming_rsi
@@ -1954,20 +2015,57 @@ def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15mi
         return None, None, None, None, None, None, None
 
     # =================================================================
+    # ENTERPRISE CROSS FILTERS
+    # =================================================================
+    if enable_tema_filter and signal:
+        tema_rsi = calculate_tema(true_rsi, length=9)
+        if len(tema_rsi) >= 2 and not pd.isna(tema_rsi.iloc[-1]) and not pd.isna(tema_rsi.iloc[-2]):
+            if scanner_mode == 'cross_up' and not (tema_rsi.iloc[-1] > tema_rsi.iloc[-2]):
+                return None, None, None, None, None, None, None
+            if scanner_mode == 'cross_down' and not (tema_rsi.iloc[-1] < tema_rsi.iloc[-2]):
+                return None, None, None, None, None, None, None
+
+    if enable_vwap_filter and signal:
+        vwap = calculate_vwap(df)
+        current_close = df['close'].iloc[-1]
+        current_vwap = vwap.iloc[-1] if not pd.isna(vwap.iloc[-1]) else vwap.dropna().iloc[-1] if len(vwap.dropna()) > 0 else None
+        if current_vwap is not None:
+            if scanner_mode == 'cross_up' and current_close <= current_vwap:
+                return None, None, None, None, None, None, None
+            if scanner_mode == 'cross_down' and current_close >= current_vwap:
+                return None, None, None, None, None, None, None
+
+    if enable_volume_filter_cross and signal:
+        if volume is not None and len(volume) >= 21:
+            avg_vol = volume.iloc[-21:-1].mean()
+            current_vol = volume.iloc[-1]
+            if avg_vol > 0 and current_vol < 1.2 * avg_vol:
+                return None, None, None, None, None, None, None
+
+    if enable_htf_rsi_filter and signal:
+        htf_rsi = calculate_rsi(df['close'], length=50)
+        if not pd.isna(htf_rsi.iloc[-1]):
+            htf_val = htf_rsi.iloc[-1]
+            if scanner_mode == 'cross_up' and htf_val <= 50:
+                return None, None, None, None, None, None, None
+            if scanner_mode == 'cross_down' and htf_val >= 50:
+                return None, None, None, None, None, None, None
+
+    # =================================================================
     # CALCULATE ANGLE (as percentage difference)
     # =================================================================
-    # Angle = ((RSI - VWMA) / VWMA) * 100
-    if use_vwma != 0:
-        angle = ((use_rsi - use_vwma) / use_vwma) * 100
+    use_compare = (use_alma if signal_line == 'alma' else use_vwma)
+    if use_compare and use_compare != 0:
+        angle = ((use_rsi - use_compare) / use_compare) * 100
     else:
         angle = 0.0
 
-    # RSI-VWMA difference
-    rsi_vwma_diff = use_rsi - use_vwma
+    # RSI diff vs the selected signal line
+    rsi_diff = use_rsi - use_compare if use_compare is not None else None
 
-    logging.info(f"  >>> Adaptive HTF Cross {signal} signal ({candle_status}) | RSI={use_rsi:.2f} VWMA={use_vwma:.2f} ALMA={use_alma:.2f} | Angle={angle:.2f}%")
+    logging.info(f"  >>> Adaptive HTF Cross ({signal_line.upper()}) {signal} signal ({candle_status}) | RSI={use_rsi:.2f} {signal_line.upper()}={use_compare:.2f} | Angle={angle:.2f}%")
 
-    return signal, angle, rsi_vwma_diff, use_rsi, use_vwma, use_alma, candle_status
+    return signal, angle, rsi_diff, use_rsi, use_vwma, use_alma, candle_status
 
 def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None, tf_input='15min',
                          rsi_mode='ALMA Fixed', fixed_rsi_length=11, fixed_vwma_length=21, fixed_tema_length=10):
@@ -2344,93 +2442,6 @@ def apply_qwen_scanner(df, tf_input="1 day", use_current_candle=False, **kwargs)
         return None, None, None, None, None, None
 
 # =============================================================================
-# GAP SCANNER
-# =============================================================================
-
-def apply_gap_scanner(df, tf_input='15min', lookback=500):
-    """
-    Gap Scanner: Detects unfilled price gaps between consecutive confirmed candles
-    across the last `lookback` candles (default 500).
-
-    Gap Up  : candle.low  > prev_candle.high  →  LONG  signal
-    Gap Down: candle.high < prev_candle.low   →  SHORT signal
-
-    A gap is reported only when it remains UNFILLED, i.e. current price has not
-    retraced back into the gap zone.
-
-    Returns:
-        list of dicts, each with keys:
-            signal    : 'LONG' or 'SHORT'
-            gap_pct   : size of the gap as a % of the reference boundary
-            gap_high  : upper price boundary of the gap zone
-            gap_low   : lower price boundary of the gap zone
-            candle_ts : ISO-style timestamp string of the gap candle
-    """
-    if df is None or len(df) < 3:
-        return []
-
-    gaps = []
-    try:
-        cur_close = float(df.iloc[-1]['close'])
-
-        # Scan confirmed candles only (exclude the forming candle at iloc[-1])
-        # Check pairs (prev_candle, gap_candle) within the last `lookback` candles
-        confirmed = df.iloc[:-1]  # all confirmed candles
-        start_idx = max(1, len(confirmed) - lookback)
-
-        for i in range(start_idx, len(confirmed)):
-            try:
-                gap_candle  = confirmed.iloc[i]
-                prev_candle = confirmed.iloc[i - 1]
-
-                g_low  = float(gap_candle['low'])
-                g_high = float(gap_candle['high'])
-                p_low  = float(prev_candle['low'])
-                p_high = float(prev_candle['high'])
-
-                try:
-                    candle_ts = str(gap_candle.name)[:16]
-                except Exception:
-                    candle_ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-                # ── Gap Up ──
-                if g_low > p_high:
-                    gap_low_zone  = p_high
-                    gap_high_zone = g_low
-                    gap_pct = ((gap_high_zone - gap_low_zone) / gap_low_zone) * 100
-                    # Unfilled as long as price hasn't fallen back to gap_low_zone
-                    if cur_close > gap_low_zone:
-                        gaps.append({
-                            'signal': 'LONG',
-                            'gap_pct': gap_pct,
-                            'gap_high': gap_high_zone,
-                            'gap_low': gap_low_zone,
-                            'candle_ts': candle_ts,
-                        })
-
-                # ── Gap Down ──
-                elif g_high < p_low:
-                    gap_low_zone  = g_high
-                    gap_high_zone = p_low
-                    gap_pct = ((gap_high_zone - gap_low_zone) / gap_high_zone) * 100
-                    # Unfilled as long as price hasn't risen back to gap_high_zone
-                    if cur_close < gap_high_zone:
-                        gaps.append({
-                            'signal': 'SHORT',
-                            'gap_pct': gap_pct,
-                            'gap_high': gap_high_zone,
-                            'gap_low': gap_low_zone,
-                            'candle_ts': candle_ts,
-                        })
-            except Exception:
-                continue
-
-    except Exception:
-        pass
-
-    return gaps
-
-# =============================================================================
 # MAIN SCAN ENTRY POINT
 # =============================================================================
 
@@ -2452,6 +2463,15 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     enable_volume_filter = kwargs.get('enable_volume_filter', False)
     enable_angle_filter = kwargs.get('enable_angle_filter', True)
 
+    # Enterprise Cross Scanner Filters
+    enable_tema_filter = kwargs.get('enable_tema_filter', False)
+    enable_vwap_filter = kwargs.get('enable_vwap_filter', False)
+    enable_volume_filter_cross = kwargs.get('enable_volume_filter_cross', False)
+    enable_htf_rsi_filter = kwargs.get('enable_htf_rsi_filter', False)
+
+    # CPR Narrow Filter — only emit results where CPR is Extreme Narrow or Narrow
+    enable_cpr_narrow_filter = kwargs.get('enable_cpr_narrow_filter', False)
+
     hilega_buy_rsi = kwargs.get('hilega_buy_rsi', 10)
     hilega_sell_rsi = kwargs.get('hilega_sell_rsi', 90)
     hilega_rsi_mode = kwargs.get('hilega_rsi_mode', 'ALMA Fixed')
@@ -2470,10 +2490,11 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_hilega_sell = 'hilega_sell' in scanner_type or 'all' in scanner_type
         run_cross_up = 'rsi_cross_up_vwma' in scanner_type or 'all' in scanner_type
         run_cross_down = 'rsi_cross_dn_vwma' in scanner_type or 'all' in scanner_type
+        run_cross_up_alma = 'rsi_cross_up_alma' in scanner_type or 'all' in scanner_type
+        run_cross_dn_alma = 'rsi_cross_dn_alma' in scanner_type or 'all' in scanner_type
         run_conflict_long  = 'conflict_long'  in scanner_type or 'all' in scanner_type
         run_conflict_short = 'conflict_short' in scanner_type or 'all' in scanner_type
         run_conflict_bar1  = 'conflict_bar1'  in scanner_type or 'all' in scanner_type
-        run_gap = 'gap' in scanner_type or 'all' in scanner_type
     else:
         # Single scanner type (original logic)
         run_ama = scanner_type in ('ama_pro', 'both', 'all')
@@ -2484,10 +2505,11 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_hilega_sell = scanner_type in ('hilega_sell', 'all')
         run_cross_up = scanner_type in ('rsi_cross_up_vwma', 'all')
         run_cross_down = scanner_type in ('rsi_cross_dn_vwma', 'all')
+        run_cross_up_alma = scanner_type in ('rsi_cross_up_alma', 'all')
+        run_cross_dn_alma = scanner_type in ('rsi_cross_dn_alma', 'all')
         run_conflict_long  = scanner_type in ('conflict_long',  'all')
         run_conflict_short = scanner_type in ('conflict_short', 'all')
         run_conflict_bar1  = scanner_type in ('conflict_bar1',  'all')
-        run_gap = scanner_type in ('gap', 'all')
 
     async with semaphore:
         for tf in timeframes:
@@ -2495,6 +2517,10 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                 df = await fetch_binance_data(symbol, tf)
                 if df is None:
                     continue
+
+                # ── CPR calculation (once per symbol/tf, shared by all scanners) ──
+                cpr_pivot, cpr_top, cpr_bot, cpr_width_pct, cpr_category = calculate_cpr(df)
+                cpr_narrow = cpr_category in ('Extreme Narrow', 'Narrow')
 
                 loop = asyncio.get_event_loop()
                 ama_signal = None
@@ -2598,6 +2624,10 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
 
                 # ── Helper to append a result row ──
                 def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None, open_val=None, close_val=None, sig_type=None, ma_type_used=None, candle_ts=None):
+                    # CPR narrow filter gate
+                    if enable_cpr_narrow_filter and not cpr_narrow:
+                        return
+
                     # Determine color based on Open vs Close
                     color = "N/A"
                     if open_val is not None and close_val is not None:
@@ -2620,7 +2650,10 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         'Timestamp': candle_ts if candle_ts else datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         'Color': color,
                         'Signal Type': sig_type or 'CROSSOVER',
-                        'MA Type': ma_type_used or '—'
+                        'MA Type': ma_type_used or '—',
+                        'CPR Category': cpr_category,
+                        'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
+                        'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
                     })
 
                 # ── Build results for closed-candle scanners (AMA Pro Pre = previous candle) ──
@@ -2763,18 +2796,22 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             )
                         )
                         if signal:
-                            results_list.append({
-                                'Crypto Name': symbol,
-                                'Timeperiod': tf,
-                                'Signal': signal,
-                                'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
-                                'RSI-TEMA': f"{rsi_tema_gap:+.2f}" if rsi_tema_gap is not None else "N/A",
-                                'RSI': f"{true_rsi:.2f}" if true_rsi is not None else "N/A",
-                                'VWMA': f"{vwma_rsx:.2f}" if vwma_rsx is not None else "N/A",
-                                'Daily Change': daily_change,
-                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                'Scanner': 'HILEGA BUY'
-                            })
+                            if not (enable_cpr_narrow_filter and not cpr_narrow):
+                                results_list.append({
+                                    'Crypto Name': symbol,
+                                    'Timeperiod': tf,
+                                    'Signal': signal,
+                                    'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
+                                    'RSI-TEMA': f"{rsi_tema_gap:+.2f}" if rsi_tema_gap is not None else "N/A",
+                                    'RSI': f"{true_rsi:.2f}" if true_rsi is not None else "N/A",
+                                    'VWMA': f"{vwma_rsx:.2f}" if vwma_rsx is not None else "N/A",
+                                    'Daily Change': daily_change,
+                                    'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    'Scanner': 'HILEGA BUY',
+                                    'CPR Category': cpr_category,
+                                    'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
+                                    'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
+                                })
 
                     # HILEGA SELL scanner
                     if run_hilega_sell and len(df) >= 100:
@@ -2792,103 +2829,165 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             )
                         )
                         if signal:
-                            results_list.append({
-                                'Crypto Name': symbol,
-                                'Timeperiod': tf,
-                                'Signal': signal,
-                                'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
-                                'RSI-TEMA': f"{rsi_tema_gap:+.2f}" if rsi_tema_gap is not None else "N/A",
-                                'RSI': f"{true_rsi:.2f}" if true_rsi is not None else "N/A",
-                                'VWMA': f"{vwma_rsx:.2f}" if vwma_rsx is not None else "N/A",
-                                'Daily Change': daily_change,
-                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                'Scanner': 'HILEGA SELL'
-                            })
+                            if not (enable_cpr_narrow_filter and not cpr_narrow):
+                                results_list.append({
+                                    'Crypto Name': symbol,
+                                    'Timeperiod': tf,
+                                    'Signal': signal,
+                                    'Angle': f"{angle:.2f}°" if angle is not None else "N/A",
+                                    'RSI-TEMA': f"{rsi_tema_gap:+.2f}" if rsi_tema_gap is not None else "N/A",
+                                    'RSI': f"{true_rsi:.2f}" if true_rsi is not None else "N/A",
+                                    'VWMA': f"{vwma_rsx:.2f}" if vwma_rsx is not None else "N/A",
+                                    'Daily Change': daily_change,
+                                    'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    'Scanner': 'HILEGA SELL',
+                                    'CPR Category': cpr_category,
+                                    'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
+                                    'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
+                                })
 
                 # ── ADAPTIVE HTF CROSS SCANNER LOGIC ──
                 # Cross scanner uses a different result structure and is mutually exclusive with AMA/HILEGA
-                if run_cross_up or run_cross_down:
+                if run_cross_up or run_cross_down or run_cross_up_alma or run_cross_dn_alma:
                     # RSI Cross UP VWMA scanner
                     if run_cross_up and len(df) >= 100:
-                        signal, angle, rsi_vwma_diff, rsi_val, vwma_val, alma_val, candle_status = await loop.run_in_executor(
+                        signal, angle, rsi_diff, rsi_val, vwma_val, alma_val, candle_status = await loop.run_in_executor(
                             executor,
                             lambda tf=tf: apply_adaptive_htf_cross_scanner(
                                 df.copy(),
                                 scanner_mode='cross_up',
-                                tf_input=tf
+                                tf_input=tf,
+                                signal_line='vwma',
+                                enable_tema_filter=enable_tema_filter,
+                                enable_vwap_filter=enable_vwap_filter,
+                                enable_volume_filter_cross=enable_volume_filter_cross,
+                                enable_htf_rsi_filter=enable_htf_rsi_filter
                             )
                         )
                         if signal:
-                            signal_type = "Cross UP"
-                            results_list.append({
-                                'Crypto Name': symbol,
-                                'Timeperiod': tf,
-                                'Signal Type': signal_type,
-                                'Candle Status': candle_status or 'N/A',
-                                'Angle': f"{angle:.2f}%" if angle is not None else "N/A",
-                                'RSI-VWMA': f"{rsi_vwma_diff:+.2f}" if rsi_vwma_diff is not None else "N/A",
-                                'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
-                                'VWMA': f"{vwma_val:.2f}" if vwma_val is not None else "N/A",
-                                'ALMA': f"{alma_val:.2f}" if alma_val is not None else "N/A",
-                                'Daily Change': daily_change,
-                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                'Scanner': 'RSI CROSS UP VWMA'
-                            })
+                            if not (enable_cpr_narrow_filter and not cpr_narrow):
+                                results_list.append({
+                                    'Crypto Name': symbol,
+                                    'Timeperiod': tf,
+                                    'Signal Type': 'Cross UP',
+                                    'Candle Status': candle_status or 'N/A',
+                                    'Angle': f"{angle:.2f}%" if angle is not None else "N/A",
+                                    'RSI-VWMA': f"{rsi_diff:+.2f}" if rsi_diff is not None else "N/A",
+                                    'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
+                                    'VWMA': f"{vwma_val:.2f}" if vwma_val is not None else "N/A",
+                                    'ALMA': f"{alma_val:.2f}" if alma_val is not None else "N/A",
+                                    'Daily Change': daily_change,
+                                    'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    'Scanner': 'RSI CROSS UP VWMA',
+                                    'CPR Category': cpr_category,
+                                    'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
+                                    'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
+                                })
 
                     # RSI Cross DN VWMA scanner
                     if run_cross_down and len(df) >= 100:
-                        signal, angle, rsi_vwma_diff, rsi_val, vwma_val, alma_val, candle_status = await loop.run_in_executor(
+                        signal, angle, rsi_diff, rsi_val, vwma_val, alma_val, candle_status = await loop.run_in_executor(
                             executor,
                             lambda tf=tf: apply_adaptive_htf_cross_scanner(
                                 df.copy(),
                                 scanner_mode='cross_down',
-                                tf_input=tf
+                                tf_input=tf,
+                                signal_line='vwma',
+                                enable_tema_filter=enable_tema_filter,
+                                enable_vwap_filter=enable_vwap_filter,
+                                enable_volume_filter_cross=enable_volume_filter_cross,
+                                enable_htf_rsi_filter=enable_htf_rsi_filter
                             )
                         )
                         if signal:
-                            signal_type = "Cross DN"
-                            results_list.append({
-                                'Crypto Name': symbol,
-                                'Timeperiod': tf,
-                                'Signal Type': signal_type,
-                                'Candle Status': candle_status or 'N/A',
-                                'Angle': f"{angle:.2f}%" if angle is not None else "N/A",
-                                'RSI-VWMA': f"{rsi_vwma_diff:+.2f}" if rsi_vwma_diff is not None else "N/A",
-                                'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
-                                'VWMA': f"{vwma_val:.2f}" if vwma_val is not None else "N/A",
-                                'ALMA': f"{alma_val:.2f}" if alma_val is not None else "N/A",
-                                'Daily Change': daily_change,
-                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                'Scanner': 'RSI CROSS DN VWMA'
-                            })
+                            if not (enable_cpr_narrow_filter and not cpr_narrow):
+                                results_list.append({
+                                    'Crypto Name': symbol,
+                                    'Timeperiod': tf,
+                                    'Signal Type': 'Cross DN',
+                                    'Candle Status': candle_status or 'N/A',
+                                    'Angle': f"{angle:.2f}%" if angle is not None else "N/A",
+                                    'RSI-VWMA': f"{rsi_diff:+.2f}" if rsi_diff is not None else "N/A",
+                                    'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
+                                    'VWMA': f"{vwma_val:.2f}" if vwma_val is not None else "N/A",
+                                    'ALMA': f"{alma_val:.2f}" if alma_val is not None else "N/A",
+                                    'Daily Change': daily_change,
+                                    'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    'Scanner': 'RSI CROSS DN VWMA',
+                                    'CPR Category': cpr_category,
+                                    'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
+                                    'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
+                                })
 
-                # ── GAP SCANNER LOGIC ──
-                if run_gap and len(df) >= 3:
-                    gaps = await loop.run_in_executor(
-                        executor,
-                        lambda tf=tf: apply_gap_scanner(df.copy(), tf_input=tf, lookback=500)
-                    )
-                    for gap in gaps:
-                        gap_signal = gap['signal']
-                        gap_pct    = gap['gap_pct']
-                        gap_high   = gap['gap_high']
-                        gap_low    = gap['gap_low']
-                        gap_ts     = gap['candle_ts']
-                        gap_type   = "Gap Up" if gap_signal == 'LONG' else "Gap Down"
-                        results_list.append({
-                            'Crypto Name': symbol,
-                            'Timeperiod': tf,
-                            'Signal': gap_signal,
-                            'Gap Type': gap_type,
-                            'Gap Size': f"{gap_pct:.3f}%" if gap_pct is not None else "N/A",
-                            'Gap High': f"{gap_high:.4f}" if gap_high is not None else "N/A",
-                            'Gap Low': f"{gap_low:.4f}" if gap_low is not None else "N/A",
-                            'Daily Change': daily_change,
-                            'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            'Candle': gap_ts or 'N/A',
-                            'Scanner': 'GAP'
-                        })
-                        logging.info(f"  Gap Scanner | {symbol} | TF={tf} | {gap_type} | Size={gap_pct:.3f}% | Zone={gap_low:.4f}-{gap_high:.4f} | Candle={gap_ts}")
+                    # RSI Cross UP ALMA scanner
+                    if run_cross_up_alma and len(df) >= 100:
+                        signal, angle, rsi_diff, rsi_val, vwma_val, alma_val, candle_status = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf: apply_adaptive_htf_cross_scanner(
+                                df.copy(),
+                                scanner_mode='cross_up',
+                                tf_input=tf,
+                                signal_line='alma',
+                                enable_tema_filter=enable_tema_filter,
+                                enable_vwap_filter=enable_vwap_filter,
+                                enable_volume_filter_cross=enable_volume_filter_cross,
+                                enable_htf_rsi_filter=enable_htf_rsi_filter
+                            )
+                        )
+                        if signal:
+                            if not (enable_cpr_narrow_filter and not cpr_narrow):
+                                results_list.append({
+                                    'Crypto Name': symbol,
+                                    'Timeperiod': tf,
+                                    'Signal Type': 'Cross UP',
+                                    'Candle Status': candle_status or 'N/A',
+                                    'Angle': f"{angle:.2f}%" if angle is not None else "N/A",
+                                    'RSI-ALMA': f"{rsi_diff:+.2f}" if rsi_diff is not None else "N/A",
+                                    'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
+                                    'VWMA': f"{vwma_val:.2f}" if vwma_val is not None else "N/A",
+                                    'ALMA': f"{alma_val:.2f}" if alma_val is not None else "N/A",
+                                    'Daily Change': daily_change,
+                                    'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    'Scanner': 'RSI CROSS UP ALMA',
+                                    'CPR Category': cpr_category,
+                                    'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
+                                    'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
+                                })
+
+                    # RSI Cross DN ALMA scanner
+                    if run_cross_dn_alma and len(df) >= 100:
+                        signal, angle, rsi_diff, rsi_val, vwma_val, alma_val, candle_status = await loop.run_in_executor(
+                            executor,
+                            lambda tf=tf: apply_adaptive_htf_cross_scanner(
+                                df.copy(),
+                                scanner_mode='cross_down',
+                                tf_input=tf,
+                                signal_line='alma',
+                                enable_tema_filter=enable_tema_filter,
+                                enable_vwap_filter=enable_vwap_filter,
+                                enable_volume_filter_cross=enable_volume_filter_cross,
+                                enable_htf_rsi_filter=enable_htf_rsi_filter
+                            )
+                        )
+                        if signal:
+                            if not (enable_cpr_narrow_filter and not cpr_narrow):
+                                results_list.append({
+                                    'Crypto Name': symbol,
+                                    'Timeperiod': tf,
+                                    'Signal Type': 'Cross DN',
+                                    'Candle Status': candle_status or 'N/A',
+                                    'Angle': f"{angle:.2f}%" if angle is not None else "N/A",
+                                    'RSI-ALMA': f"{rsi_diff:+.2f}" if rsi_diff is not None else "N/A",
+                                    'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
+                                    'VWMA': f"{vwma_val:.2f}" if vwma_val is not None else "N/A",
+                                    'ALMA': f"{alma_val:.2f}" if alma_val is not None else "N/A",
+                                    'Daily Change': daily_change,
+                                    'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    'Scanner': 'RSI CROSS DN ALMA',
+                                    'CPR Category': cpr_category,
+                                    'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
+                                    'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
+                                })
 
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
