@@ -26,7 +26,7 @@ python3 main.py
 
 ### 4. Access the Dashboard
 Once the server is running, open your browser and go to:
-**[http://localhost:8002](http://localhost:8002)**
+**[http://localhost:8001](http://localhost:8001)**
 
 ---
 

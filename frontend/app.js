@@ -2,7 +2,7 @@
    GEMINI SCANNER — ENTERPRISE APPLICATION LOGIC
    ═══════════════════════════════════════════════════════════════════ */
 
-const API_URL = 'http://localhost:8002';
+const API_URL = 'http://localhost:8001';
 let allResults = [];
 let allHilegaResults = [];
 let allCrossResults = [];
