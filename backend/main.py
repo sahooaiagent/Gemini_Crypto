@@ -2,13 +2,17 @@ import logging
 import datetime
 import time
 import statistics
+import asyncio
+import uuid
+import subprocess
+import json
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict, Any
 import os
 import sys
 
@@ -48,6 +52,7 @@ latest_scan = {
     "cross_results": [],
     "conflict_results": [],
     "gap_results": [],
+    "ob_os_results": [],
     "scan_time": None,
     "duration": None
 }
@@ -77,6 +82,263 @@ class ScanRequest(BaseModel):
     enable_htf_rsi_filter: Optional[bool] = False
     # CPR Narrow Filter — only show signals where CPR is Extreme Narrow or Narrow
     enable_cpr_narrow_filter: Optional[bool] = False
+
+# ══════════════════════════════════════════════════════════════════
+# ALERT SYSTEM
+# ══════════════════════════════════════════════════════════════════
+
+ALERTS_FILE = os.path.join(os.path.dirname(__file__), "alerts.json")
+
+class AlertConfig(BaseModel):
+    alert_id: str = ""
+    name: str
+    scanner_type: List[str]
+    timeframes: List[str]
+    crypto_count: int = 20
+    ma_type: str = "ALMA"
+    frequency_minutes: int = 15
+    sound_enabled: bool = True
+    adaptation_speed: str = "Medium"
+    min_bars_between: int = 3
+    auto_ma_type: bool = True
+    enable_regime_filter: bool = True
+    enable_volume_filter: bool = False
+    enable_angle_filter: bool = True
+    enable_tema_filter: bool = False
+    enable_vwap_filter: bool = False
+    enable_volume_filter_cross: bool = False
+    enable_htf_rsi_filter: bool = False
+    enable_cpr_narrow_filter: bool = False
+
+# In-memory stores — state is never persisted (tasks die with the process)
+alert_configs: Dict[str, AlertConfig] = {}
+alert_state:   Dict[str, Dict[str, Any]] = {}
+
+# Limit concurrent alert scans to avoid hammering Binance rate limits
+_scan_semaphore = asyncio.Semaphore(2)
+
+
+def _fresh_state() -> Dict[str, Any]:
+    return {
+        "status":          "stopped",   # stopped | running | error
+        "task":            None,
+        "stop_event":      None,
+        "last_run_at":     None,
+        "next_run_at":     None,
+        "last_error":      None,
+        "signal_history":  [],          # capped at 200 entries
+        "seen_candle_keys": set(),      # dedup set
+        "badge_count":     0,           # unacknowledged new signals
+        "total_signals":   0,
+    }
+
+
+def _load_alerts():
+    """Load persisted alert configs from disk on startup."""
+    if not os.path.exists(ALERTS_FILE):
+        return
+    try:
+        with open(ALERTS_FILE, "r") as f:
+            data = json.load(f)
+        for cfg in data:
+            aid = cfg["alert_id"]
+            alert_configs[aid] = AlertConfig(**cfg)
+            alert_state[aid]   = _fresh_state()
+        logging.info(f"[alerts] Loaded {len(alert_configs)} alert(s) from disk.")
+    except Exception as e:
+        logging.warning(f"[alerts] Could not load alerts.json: {e}")
+
+
+def _save_alerts():
+    """Persist alert configs (not state) to disk."""
+    try:
+        data = [cfg.dict() for cfg in alert_configs.values()]
+        with open(ALERTS_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logging.warning(f"[alerts] Could not save alerts.json: {e}")
+
+
+def _make_candle_key(sig: dict) -> str:
+    symbol  = sig.get("Crypto Name", sig.get("Symbol", ""))
+    tf      = sig.get("Timeperiod",  sig.get("Timeframe", ""))
+    ts      = sig.get("Timestamp",   sig.get("candle_time", ""))
+    scanner = sig.get("Scanner", "")
+    return f"{symbol}|{tf}|{ts}|{scanner}"
+
+
+def _process_new_signals(alert_id: str, raw_results: list) -> list:
+    """Deduplicate results; append new ones to history. Returns only new signals."""
+    state = alert_state[alert_id]
+    seen  = state["seen_candle_keys"]
+    new   = []
+    for sig in raw_results:
+        key = _make_candle_key(sig)
+        if key not in seen:
+            seen.add(key)
+            new.append(sig)
+            entry = {**sig, "_candle_key": key,
+                     "_alert_ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+            state["signal_history"].append(entry)
+            state["badge_count"]  += 1
+            state["total_signals"] += 1
+            if len(state["signal_history"]) > 200:
+                state["signal_history"].pop(0)
+    # Trim seen set to avoid unbounded growth
+    if len(seen) > 5000:
+        state["seen_candle_keys"] = {e["_candle_key"] for e in state["signal_history"]}
+    return new
+
+
+def _fire_mac_notification(alert_name: str, signals: list, sound_enabled: bool):
+    """Send a native macOS desktop notification via osascript."""
+    if sys.platform != "darwin":
+        logging.info("[alerts] Non-macOS — skipping desktop notification")
+        return
+    count   = len(signals)
+    first   = signals[0]
+    symbol  = first.get("Crypto Name", first.get("Symbol", ""))
+    direction = first.get("Signal", "")
+    tf      = first.get("Timeperiod", first.get("Timeframe", ""))
+    scanner_lbl = first.get("Scanner", "")
+    body    = f"{symbol} {direction} · {tf} · {scanner_lbl}"
+    if count > 1:
+        body += f"  (+{count - 1} more)"
+    sound_clause = 'sound name "default"' if sound_enabled else ""
+    script = (
+        f'display notification "{body}" '
+        f'with title "Gemini Alert: {alert_name}" '
+        f'subtitle "Gemini Scanner" '
+        f'{sound_clause}'
+    )
+    try:
+        result = subprocess.run(["osascript", "-e", script],
+                                capture_output=True, timeout=5)
+        if result.returncode != 0:
+            logging.warning(f"[alerts] osascript error: {result.stderr.decode()}")
+    except Exception as e:
+        logging.warning(f"[alerts] osascript failed: {e}")
+
+
+async def _alert_worker(alert_id: str):
+    """Background coroutine: runs scan at the configured frequency."""
+    config     = alert_configs[alert_id]
+    state      = alert_state[alert_id]
+    stop_event = state["stop_event"]
+
+    logging.info(f"[alert:{alert_id}] Worker started — '{config.name}' every {config.frequency_minutes}m")
+
+    # Align first run to next candle boundary (+5 s after close)
+    now          = datetime.datetime.now()
+    freq         = config.frequency_minutes
+    mins_into    = now.minute % freq
+    secs_to_next = (freq - mins_into) * 60 - now.second + 5
+    if secs_to_next >= freq * 60:
+        secs_to_next = 15  # already aligned — run almost immediately
+
+    logging.info(f"[alert:{alert_id}] First run in {secs_to_next}s")
+    remaining = secs_to_next
+    while remaining > 0:
+        if stop_event.is_set():
+            state["status"] = "stopped"; state["task"] = None; return
+        await asyncio.sleep(min(10, remaining))
+        remaining -= 10
+
+    while True:
+        if stop_event.is_set():
+            state["status"] = "stopped"; state["task"] = None; return
+
+        state["last_run_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            async with _scan_semaphore:
+                results = await scanner.run_scan(
+                    ["CRYPTO"],
+                    config.timeframes,
+                    log_file,
+                    adaptation_speed=config.adaptation_speed,
+                    min_bars_between=config.min_bars_between,
+                    crypto_count=config.crypto_count,
+                    scanner_type=config.scanner_type,
+                    ma_type=config.ma_type,
+                    auto_ma_type=config.auto_ma_type,
+                    enable_regime_filter=config.enable_regime_filter,
+                    enable_volume_filter=config.enable_volume_filter,
+                    enable_angle_filter=config.enable_angle_filter,
+                    enable_tema_filter=config.enable_tema_filter,
+                    enable_vwap_filter=config.enable_vwap_filter,
+                    enable_volume_filter_cross=config.enable_volume_filter_cross,
+                    enable_htf_rsi_filter=config.enable_htf_rsi_filter,
+                    enable_cpr_narrow_filter=config.enable_cpr_narrow_filter,
+                )
+
+            new_signals = _process_new_signals(alert_id, results)
+            if new_signals:
+                _fire_mac_notification(config.name, new_signals, config.sound_enabled)
+                logging.info(f"[alert:{alert_id}] {len(new_signals)} new signal(s) — notified")
+            else:
+                logging.info(f"[alert:{alert_id}] Scan complete — no new signals")
+
+            state["status"]     = "running"
+            state["last_error"] = None
+
+        except asyncio.CancelledError:
+            state["status"] = "stopped"; state["task"] = None; return
+        except Exception as e:
+            state["status"]     = "error"
+            state["last_error"] = str(e)
+            logging.error(f"[alert:{alert_id}] Scan error: {e}")
+
+        # Schedule next run (sleep in 10-s chunks for responsive cancellation)
+        next_dt = datetime.datetime.now() + datetime.timedelta(minutes=config.frequency_minutes)
+        state["next_run_at"] = next_dt.strftime("%Y-%m-%d %H:%M:%S")
+        sleep_remaining = config.frequency_minutes * 60
+        while sleep_remaining > 0:
+            if stop_event.is_set():
+                state["status"] = "stopped"; state["task"] = None; return
+            await asyncio.sleep(min(10, sleep_remaining))
+            sleep_remaining -= 10
+
+
+def _start_alert_task(alert_id: str):
+    state             = alert_state[alert_id]
+    stop_event        = asyncio.Event()
+    state["stop_event"] = stop_event
+    state["status"]   = "running"
+    state["last_error"] = None
+    state["task"]     = asyncio.create_task(_alert_worker(alert_id))
+
+
+def _stop_alert_task(alert_id: str):
+    state = alert_state[alert_id]
+    ev    = state.get("stop_event")
+    if ev:
+        ev.set()
+    task = state.get("task")
+    if task and not task.done():
+        task.cancel()
+    state["status"]      = "stopped"
+    state["task"]        = None
+    state["next_run_at"] = None
+
+
+def _alert_to_dict(aid: str) -> dict:
+    cfg = alert_configs[aid]
+    st  = alert_state[aid]
+    return {
+        **cfg.dict(),
+        "status":        st["status"],
+        "last_run_at":   st["last_run_at"],
+        "next_run_at":   st["next_run_at"],
+        "last_error":    st["last_error"],
+        "badge_count":   st["badge_count"],
+        "total_signals": st["total_signals"],
+        "history_count": len(st["signal_history"]),
+    }
+
+
+# Load persisted alerts at startup (tasks stay stopped — user must press Start)
+_load_alerts()
+
 
 # ── API ROUTES ──
 
@@ -128,20 +390,23 @@ async def trigger_scan(request: ScanRequest):
         duration = round(time.time() - start_time, 2)
         scan_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Separate HILEGA, Cross, Conflict, Gap, and AMA/Qwen results
+        # Separate HILEGA, Cross, Conflict, Gap, OB/OS, and AMA/Qwen results
         hilega_results = []
         cross_results = []
         conflict_results = []
         gap_results = []
+        ob_os_results = []
         ama_qwen_results = []
 
         for result in results:
             scanner_label = result.get('Scanner', '')
-            if 'HILEGA' in scanner_label:
+            if scanner_label in ('HILEGA OB', 'HILEGA OS'):
+                ob_os_results.append(result)
+            elif 'HILEGA' in scanner_label:
                 hilega_results.append(result)
             elif 'CROSS' in scanner_label:
                 cross_results.append(result)
-            elif 'Conflict' in scanner_label or 'Bar+1' in scanner_label:
+            elif scanner_label in ('BC', 'SC') or 'Bar+1' in scanner_label:
                 conflict_results.append(result)
             elif scanner_label == 'GAP':
                 gap_results.append(result)
@@ -154,10 +419,11 @@ async def trigger_scan(request: ScanRequest):
         latest_scan["cross_results"] = cross_results
         latest_scan["conflict_results"] = conflict_results
         latest_scan["gap_results"] = gap_results
+        latest_scan["ob_os_results"] = ob_os_results
         latest_scan["scan_time"] = scan_time
         latest_scan["duration"] = duration
 
-        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen, {len(conflict_results)} Conflict, {len(hilega_results)} HILEGA, {len(cross_results)} Cross, {len(gap_results)} Gap signal(s).")
+        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen, {len(conflict_results)} Conflict, {len(hilega_results)} HILEGA, {len(cross_results)} Cross, {len(gap_results)} Gap, {len(ob_os_results)} OB/OS signal(s).")
         return {
             "status": "success",
             "data": ama_qwen_results,
@@ -165,6 +431,7 @@ async def trigger_scan(request: ScanRequest):
             "cross_data": cross_results,
             "conflict_data": conflict_results,
             "gap_data": gap_results,
+            "ob_os_data": ob_os_results,
             "scan_time": scan_time,
             "duration": duration
         }
@@ -181,6 +448,7 @@ async def get_results():
         "cross_results": latest_scan["cross_results"],
         "conflict_results": latest_scan["conflict_results"],
         "gap_results": latest_scan["gap_results"],
+        "ob_os_results": latest_scan["ob_os_results"],
         "scan_time": latest_scan["scan_time"],
         "duration": latest_scan["duration"]
     }
@@ -784,6 +1052,81 @@ def get_status():
         "uptime": "active"
     }
 
+# ══════════════════════════════════════════════════════════════════
+# ALERT ENDPOINTS
+# ══════════════════════════════════════════════════════════════════
+
+@app.get("/api/alerts")
+async def list_alerts():
+    return {"alerts": [_alert_to_dict(aid) for aid in alert_configs]}
+
+@app.post("/api/alerts")
+async def create_alert(config: AlertConfig):
+    aid         = str(uuid.uuid4())
+    config.alert_id = aid
+    alert_configs[aid] = config
+    alert_state[aid]   = _fresh_state()
+    _save_alerts()
+    logging.info(f"[alerts] Created '{config.name}' ({aid})")
+    return _alert_to_dict(aid)
+
+@app.get("/api/alerts/{alert_id}")
+async def get_alert(alert_id: str):
+    if alert_id not in alert_configs:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return _alert_to_dict(alert_id)
+
+@app.put("/api/alerts/{alert_id}")
+async def update_alert(alert_id: str, config: AlertConfig):
+    if alert_id not in alert_configs:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if alert_state[alert_id]["status"] == "running":
+        raise HTTPException(status_code=409, detail="Stop the alert before editing it")
+    config.alert_id    = alert_id
+    alert_configs[alert_id] = config
+    _save_alerts()
+    return _alert_to_dict(alert_id)
+
+@app.delete("/api/alerts/{alert_id}")
+async def delete_alert(alert_id: str):
+    if alert_id not in alert_configs:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    _stop_alert_task(alert_id)
+    del alert_configs[alert_id]
+    del alert_state[alert_id]
+    _save_alerts()
+    return {"status": "deleted"}
+
+@app.post("/api/alerts/{alert_id}/start")
+async def start_alert_endpoint(alert_id: str):
+    if alert_id not in alert_configs:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if alert_state[alert_id]["status"] == "running":
+        raise HTTPException(status_code=409, detail="Alert is already running")
+    _start_alert_task(alert_id)
+    return _alert_to_dict(alert_id)
+
+@app.post("/api/alerts/{alert_id}/stop")
+async def stop_alert_endpoint(alert_id: str):
+    if alert_id not in alert_configs:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    _stop_alert_task(alert_id)
+    return _alert_to_dict(alert_id)
+
+@app.get("/api/alerts/{alert_id}/history")
+async def get_alert_history(alert_id: str):
+    if alert_id not in alert_configs:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"history": list(reversed(alert_state[alert_id]["signal_history"]))}
+
+@app.post("/api/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(alert_id: str):
+    if alert_id not in alert_configs:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    alert_state[alert_id]["badge_count"] = 0
+    return {"status": "acknowledged"}
+
+
 # Serve static frontend files
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.isdir(frontend_dir):
@@ -791,7 +1134,15 @@ if os.path.isdir(frontend_dir):
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logging.info("Shutting down Enterprise API...")
+    logging.info("Shutting down Enterprise API — stopping all alert workers...")
+    tasks = []
+    for aid in list(alert_state.keys()):
+        _stop_alert_task(aid)
+        task = alert_state[aid].get("task")
+        if task and not task.done():
+            tasks.append(task)
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
     await scanner.close_exchange()
 
 if __name__ == "__main__":

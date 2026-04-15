@@ -7,6 +7,7 @@ let allResults = [];
 let allHilegaResults = [];
 let allCrossResults = [];
 let allConflictResults = [];
+let allObOsResults = [];
 let scanRunning = false;
 let lastScanConfig = null;
 let logPollInterval = null;
@@ -14,6 +15,7 @@ let currentSort = { col: null, asc: true };
 let currentHilegaSort = { col: null, asc: true };
 let currentCrossSort = { col: null, asc: true };
 let currentConflictSort = { col: null, asc: true };
+let currentObOsSort = { col: null, asc: true };
 let currentPerformanceSort = { col: 'symbol', asc: true };
 let performanceMonth = null;
 
@@ -33,7 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initMobileMenu();
     initThemeToggle();
     initTickerSpeedControl();
+    initJournal();
     setupPerformanceControls();
+    initAlerts();
     setConnectionStatus(true);
 
     // Initial data fetch
@@ -73,6 +77,15 @@ function initNavigation() {
             if (tab === 'performance') {
                 fetchTradeSetups();
                 fetchMarketHeatmap();
+            }
+            if (tab === 'journal') {
+                renderJournal();
+            }
+            if (tab === 'alerts') {
+                fetchAlerts();
+                startAlertPolling();
+            } else {
+                stopAlertPolling();
             }
             // Close mobile sidebar
             $('#sidebar').classList.remove('open');
@@ -422,6 +435,7 @@ function finalizeOutstandingTrades(trades, priceIndex = {}) {
 
         trade.closed_price = price;
         trade.updated_at = new Date().toISOString();
+        autoLogClosedTradeToJournal(trade);
     });
 }
 
@@ -642,6 +656,12 @@ function updatePerformanceStatus() {
 
     if (changed) {
         savePerformanceData(data);
+        // Auto-log newly closed trades to the journal
+        data.trades.forEach(trade => {
+            if (['Target 1 hit', 'Target 2 hit', 'Stopped out'].includes(trade.status)) {
+                autoLogClosedTradeToJournal(trade);
+            }
+        });
     }
     renderPerformanceTracker(data.trades, data.day);
 }
@@ -675,8 +695,11 @@ function renderPerformanceTracker(trades, day) {
     renderMonthlySummary(loadPerformanceData());
     renderPerformanceHistory(loadPerformanceData());
 
+    const CLOSED_STATUSES = ['Target 1 hit', 'Target 2 hit', 'Stopped out', 'Closed (EOD)'];
     const searchVal = ($('#performanceSearchInput')?.value || '').toLowerCase();
     let visibleTrades = (trades || []).filter(trade => {
+        // Closed trades move to Journal automatically — hide them here
+        if (CLOSED_STATUSES.includes(trade.status)) return false;
         if (!searchVal) return true;
         return trade.symbol.toLowerCase().includes(searchVal) ||
                trade.signal.toLowerCase().includes(searchVal) ||
@@ -712,7 +735,7 @@ function renderPerformanceTracker(trades, day) {
     });
 
     if (!visibleTrades || visibleTrades.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="empty-row">No matching performance trades found.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="empty-row">No open trades. Closed trades are logged in the Trade Journal.</td></tr>`;
         return;
     }
 
@@ -1090,6 +1113,7 @@ async function fetchResults() {
         allHilegaResults = data.hilega_results || [];
         allCrossResults = data.cross_results || [];
         allConflictResults = data.conflict_results || [];
+        allObOsResults = data.ob_os_results || [];
         if (data.scan_time) {
             updateLastScanTime(data.scan_time);
         }
@@ -1097,10 +1121,12 @@ async function fetchResults() {
         populateHilegaTfFilter();
         populateCrossTfFilter();
         populateConflictTfFilter();
+        populateObOsTfFilter();
         renderResults();
         renderHilegaResults();
         renderCrossResults();
         renderConflictResults();
+        renderObOsResults();
         updateStats();
     } catch (e) {
         // API may not have /api/results yet
@@ -1224,18 +1250,17 @@ function renderResults() {
             'Qwen Now': 'scanner-qwen-now',
             'Both Now': 'scanner-both-now',
             'Both Pre': 'scanner-both-entry',
-            'Long Conflict': 'scanner-conflict-long',
-            'Short Conflict': 'scanner-conflict-short',
+            'BC': 'scanner-conflict-long',
+            'SC': 'scanner-conflict-short',
             'Qwen Pre': 'scanner-qwen-entry',
             'Qwen Now (Entry)': 'scanner-qwen-now-entry'
         };
-        // Dynamic prefix matching for conflict state labels (e.g. "Long Conflict: SAFE")
-        // and bar+1 labels (e.g. "Bar+1: ENTER (L)")
+        // Dynamic prefix matching for conflict labels and bar+1 labels
         function getScannerBadgeClass(scanner) {
             if (badgeMap[scanner]) return badgeMap[scanner];
-            if (scanner.startsWith('Long Conflict'))  return 'scanner-conflict-long';
-            if (scanner.startsWith('Short Conflict')) return 'scanner-conflict-short';
-            if (scanner.startsWith('Bar+1'))          return 'scanner-bar1';
+            if (scanner === 'BC') return 'scanner-conflict-long';
+            if (scanner === 'SC') return 'scanner-conflict-short';
+            if (scanner.startsWith('Bar+1')) return 'scanner-bar1';
             return '';
         }
         const scannerBadgeCls = getScannerBadgeClass(r.Scanner);
@@ -1479,6 +1504,104 @@ function populateCrossTfFilter() {
     select.value = tfs.includes(currentVal) ? currentVal : 'all';
 }
 
+function populateObOsTfFilter() {
+    const select = $('#obOsTfFilter');
+    const currentVal = select.value;
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
+    const tfs = [...new Set(allObOsResults.map(r => r.Timeperiod))];
+    select.innerHTML = '<option value="all">All Timeframes</option>' +
+        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
+    select.value = tfs.includes(currentVal) ? currentVal : 'all';
+}
+
+function renderObOsResults() {
+    const body = $('#obOsSignalsBody');
+    const empty = $('#obOsEmptyState');
+    const countEl = $('#obOsResultCount');
+    const searchVal = ($('#obOsSearchInput').value || '').toLowerCase();
+    const signalFilter = $('#obOsSignalFilterChips .chip.active')?.dataset?.filter || 'all';
+    const tfFilter = $('#obOsTfFilter').value;
+
+    let filtered = allObOsResults.filter(r => {
+        if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
+        if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
+        if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
+        return true;
+    });
+
+    // Sort
+    if (currentObOsSort.col) {
+        const numericCols = ['HTF RSI', 'HTF TEMA', 'ALMA RSI', 'ALMA TEMA', 'Daily Change'];
+        const isNumeric = numericCols.includes(currentObOsSort.col);
+        filtered.sort((a, b) => {
+            let va = a[currentObOsSort.col] || '';
+            let vb = b[currentObOsSort.col] || '';
+            if (isNumeric) {
+                va = parseFloat(String(va).replace(/[°%,]/g, '')) || 0;
+                vb = parseFloat(String(vb).replace(/[°%,]/g, '')) || 0;
+            } else {
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+            }
+            if (va < vb) return currentObOsSort.asc ? -1 : 1;
+            if (va > vb) return currentObOsSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+
+    if (filtered.length === 0) {
+        body.innerHTML = '';
+        empty.style.display = 'block';
+        countEl.textContent = '0 results';
+        return;
+    }
+
+    empty.style.display = 'none';
+    countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
+
+    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
+
+    body.innerHTML = filtered.map((r, i) => {
+        const isOB = r.Signal === 'OB';
+        const sigColor = isOB ? '#FF00FF' : '#0066FF';
+        const sigIcon = isOB ? 'fa-arrow-up' : 'fa-arrow-down';
+        const sigTitle = isOB ? 'Overbought — Extreme RSI — Expect violent reversal DOWN' : 'Oversold — Extreme RSI — Expect violent reversal UP';
+        const changeStr = r['Daily Change'] || '—';
+        const changeVal = parseFloat(changeStr);
+        const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
+        const name = r['Crypto Name'] || '—';
+        const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
+        const htfRsi = r['HTF RSI'] || '—';
+        const htfTema = r['HTF TEMA'] || '—';
+        const almaRsi = r['ALMA RSI'] || '—';
+        const almaTema = r['ALMA TEMA'] || '—';
+
+        // Highlight extreme values
+        const almaRsiVal = parseFloat(almaRsi);
+        const almaRsiCls = (!isNaN(almaRsiVal) && (almaRsiVal >= 88 || almaRsiVal <= 12)) ? (isOB ? 'ob-extreme' : 'os-extreme') : '';
+
+        return `
+            <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
+                <td><strong>${name}</strong></td>
+                <td><span class="tf-badge">${tfDisplay}</span></td>
+                <td>
+                    <span class="signal-badge" style="background:${sigColor}20;color:${sigColor};border:1px solid ${sigColor}40" title="${sigTitle}">
+                        <i class="fas ${sigIcon}"></i>
+                        ${r.Signal}
+                    </span>
+                </td>
+                <td class="mono">${htfRsi}</td>
+                <td class="mono">${htfTema}</td>
+                <td class="mono ${almaRsiCls}">${almaRsi}</td>
+                <td class="mono">${almaTema}</td>
+                <td class="${changeCls}">${changeStr}</td>
+                <td class="mono">${r.Timestamp || '—'}</td>
+                <td>${getCprBadge(r['CPR Category'])}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
 function populateConflictTfFilter() {
     const select = $('#conflictTfFilter');
     const currentVal = select.value;
@@ -1538,16 +1661,14 @@ function renderConflictResults() {
 
     function getConflictBadgeClass(scanner) {
         if (!scanner) return '';
-        if (scanner.startsWith('Long Conflict'))  return 'scanner-conflict-long';
-        if (scanner.startsWith('Short Conflict')) return 'scanner-conflict-short';
-        if (scanner.startsWith('Bar+1'))          return 'scanner-bar1';
+        if (scanner === 'BC') return 'scanner-conflict-long';
+        if (scanner === 'SC') return 'scanner-conflict-short';
+        if (scanner.startsWith('Bar+1')) return 'scanner-bar1';
         return '';
     }
 
-    // Extract state label from scanner string e.g. "Long Conflict: SAFE" → "SAFE"
     function getConflictState(scanner) {
-        const parts = scanner.split(':');
-        return parts.length > 1 ? parts.slice(1).join(':').trim() : scanner;
+        return scanner;
     }
 
     body.innerHTML = filtered.map((r, i) => {
@@ -1623,10 +1744,12 @@ function clearDashboard() {
     allHilegaResults = [];
     allCrossResults = [];
     allConflictResults = [];
+    allObOsResults = [];
     renderResults();
     renderHilegaResults();
     renderCrossResults();
     renderConflictResults();
+    renderObOsResults();
     console.log('[clearDashboard] Done.');
 }
 
@@ -1767,6 +1890,9 @@ function initScannerControls() {
 
     // Export Hilega CSV
     $('#exportHilegaCsvBtn').addEventListener('click', exportHilegaCSV);
+
+    // Export OB/OS CSV
+    $('#exportObOsCsvBtn').addEventListener('click', exportObOsCSV);
 
     // Clear logs
     const clearLogHTML = `
@@ -1925,7 +2051,7 @@ async function runScan(overrideConfig = null) {
         }
 
         // Build scanner label for logging
-        const scannerLabelsMap = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'conflict_bar1': 'Bar+1 Action', 'rsi_cross_up_vwma': 'RSI Cross UP VWMA', 'rsi_cross_dn_vwma': 'RSI Cross DN VWMA', 'rsi_cross_up_alma': 'RSI Cross UP ALMA', 'rsi_cross_dn_alma': 'RSI Cross DN ALMA' };
+        const scannerLabelsMap = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'conflict_bar1': 'Bar+1 Action', 'rsi_cross_up_vwma': 'RSI Cross UP VWMA', 'rsi_cross_dn_vwma': 'RSI Cross DN VWMA', 'rsi_cross_up_alma': 'RSI Cross UP ALMA', 'rsi_cross_dn_alma': 'RSI Cross DN ALMA', 'hilega_ob': 'HILEGA OB', 'hilega_os': 'HILEGA OS' };
         scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabelsMap[s] || s).join(' + ') : (scannerLabelsMap[selectedScanners[0]] || selectedScanners[0]));
 
         // Save config for future rescans
@@ -2011,8 +2137,9 @@ async function runScan(overrideConfig = null) {
         allHilegaResults = data.hilega_data || [];
         allCrossResults = data.cross_data || [];
         allConflictResults = data.conflict_data || [];
+        allObOsResults = data.ob_os_data || [];
 
-        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length;
+        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length + allObOsResults.length;
 
         updateProgress(100, 'Scan complete!');
         const parts = [];
@@ -2020,16 +2147,19 @@ async function runScan(overrideConfig = null) {
         if (allConflictResults.length > 0) parts.push(`${allConflictResults.length} Conflict`);
         if (allHilegaResults.length > 0) parts.push(`${allHilegaResults.length} HILEGA`);
         if (allCrossResults.length > 0) parts.push(`${allCrossResults.length} Cross`);
+        if (allObOsResults.length > 0) parts.push(`${allObOsResults.length} OB/OS`);
         addLogLine('success', `✅ SCAN COMPLETED — ${parts.length ? parts.join(' · ') : '0'} signal(s) found`);
 
         populateTfFilter();
         populateHilegaTfFilter();
         populateCrossTfFilter();
         populateConflictTfFilter();
+        populateObOsTfFilter();
         renderResults();
         renderHilegaResults();
         renderCrossResults();
         renderConflictResults();
+        renderObOsResults();
         updateStats();
         updateLastScanTime(new Date().toISOString());
         fetchTradeSetups();   // refresh live setups after every scan
@@ -2309,6 +2439,48 @@ function initFilterControls() {
 
     // Conflict timeframe filter
     $('#conflictTfFilter').addEventListener('change', renderConflictResults);
+
+    // OB/OS signal filter chips
+    $$('#obOsSignalFilterChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#obOsSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            renderObOsResults();
+        });
+    });
+
+    // OB/OS search
+    let obOsSearchTimeout;
+    $('#obOsSearchInput').addEventListener('input', () => {
+        clearTimeout(obOsSearchTimeout);
+        obOsSearchTimeout = setTimeout(renderObOsResults, 200);
+    });
+
+    // OB/OS timeframe filter
+    $('#obOsTfFilter').addEventListener('change', renderObOsResults);
+
+    // OB/OS column sorting
+    const obOsColMap = {
+        'name': 'Crypto Name', 'timeframe': 'Timeperiod', 'signal': 'Signal',
+        'htfrsi': 'HTF RSI', 'htftema': 'HTF TEMA', 'almarsi': 'ALMA RSI',
+        'almatema': 'ALMA TEMA', 'change': 'Daily Change', 'cprcategory': 'CPR Category'
+    };
+    $$('#obOsSignalsTable th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = obOsColMap[th.dataset.col];
+            if (currentObOsSort.col === col) {
+                currentObOsSort.asc = !currentObOsSort.asc;
+            } else {
+                currentObOsSort.col = col;
+                currentObOsSort.asc = true;
+            }
+            $$('#obOsSignalsTable th.sortable').forEach(t => {
+                t.classList.remove('sorted-asc', 'sorted-desc');
+            });
+            th.classList.add(currentObOsSort.asc ? 'sorted-asc' : 'sorted-desc');
+            renderObOsResults();
+        });
+    });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2353,6 +2525,34 @@ function exportCSV() {
     a.click();
     URL.revokeObjectURL(url);
     showToast('CSV exported', 'success');
+}
+
+function exportObOsCSV() {
+    if (allObOsResults.length === 0) {
+        showToast('No OB/OS data to export', 'warning');
+        return;
+    }
+    const headers = ['Asset', 'Timeframe', 'Signal', 'HTF RSI', 'HTF TEMA', 'ALMA RSI', 'ALMA TEMA', 'Daily Change', 'Timestamp', 'CPR Category'];
+    const rows = allObOsResults.map(r => [
+        r['Crypto Name'],
+        r.Timeperiod,
+        r.Signal,
+        r['HTF RSI'] || '',
+        r['HTF TEMA'] || '',
+        r['ALMA RSI'] || '',
+        r['ALMA TEMA'] || '',
+        r['Daily Change'] || '',
+        r.Timestamp,
+        r['CPR Category'] || ''
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `gemini_obos_scan_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('OB/OS CSV exported', 'success');
 }
 
 function exportHilegaCSV() {
@@ -2458,6 +2658,160 @@ function updateThemeIcon(icon, theme) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// TRADE JOURNAL
+// ══════════════════════════════════════════════════════════════
+const JOURNAL_KEY = 'gemini_trade_journal';
+const JOURNAL_LOGGED_IDS_KEY = 'gemini_journal_logged_ids';
+
+function getLoggedIds() {
+    try { return new Set(JSON.parse(localStorage.getItem(JOURNAL_LOGGED_IDS_KEY)) || []); }
+    catch { return new Set(); }
+}
+
+function markLoggedId(id) {
+    const ids = getLoggedIds();
+    ids.add(id);
+    localStorage.setItem(JOURNAL_LOGGED_IDS_KEY, JSON.stringify([...ids]));
+}
+
+function autoLogClosedTradeToJournal(trade) {
+    if (!trade || !trade.id) return;
+    const closedStatuses = ['Target 1 hit', 'Target 2 hit', 'Stopped out', 'Closed (EOD)'];
+    if (!closedStatuses.includes(trade.status)) return;
+
+    // Don't double-log the same trade
+    if (getLoggedIds().has(trade.id)) return;
+
+    const pnlPct = estimateTradePnlPercent(trade);
+    const closedAt = trade.updated_at
+        ? new Date(trade.updated_at).toLocaleString('en-GB', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})
+        : new Date().toLocaleString('en-GB', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+    const entry = {
+        date:      closedAt,
+        symbol:    trade.symbol,
+        signal:    trade.signal,
+        timeframe: trade.timeframe || '5m+30m',
+        entry:     trade.entry,
+        sl:        trade.stop_loss,
+        tp1:       trade.target_1,
+        tp2:       trade.target_2,
+        result:    trade.status,
+        pnl:       pnlPct !== null ? pnlPct.toFixed(3) : '',
+        notes:     `Auto-logged · ${trade.setup_type || ''} · closed @ ${trade.closed_price || '—'}`,
+        auto:      true,
+    };
+
+    const entries = loadJournal();
+    entries.push(entry);
+    saveJournal(entries);
+    markLoggedId(trade.id);
+
+    // Re-render journal if tab is visible
+    if ($('#tab-journal') && $('#tab-journal').classList.contains('active')) {
+        renderJournal();
+    }
+}
+
+function loadJournal() {
+    try { return JSON.parse(localStorage.getItem(JOURNAL_KEY)) || []; }
+    catch { return []; }
+}
+
+function saveJournal(entries) {
+    localStorage.setItem(JOURNAL_KEY, JSON.stringify(entries));
+}
+
+function journalStats(entries) {
+    const closed = entries.filter(e => ['Target 1 hit','Target 2 hit','Stopped out','Closed manually'].includes(e.result));
+    const wins   = closed.filter(e => ['Target 1 hit','Target 2 hit'].includes(e.result)).length;
+    const losses = closed.filter(e => e.result === 'Stopped out').length;
+    const wr     = closed.length ? Math.round(wins / closed.length * 100) : 0;
+    const netPnl = entries.reduce((s, e) => s + (parseFloat(e.pnl) || 0), 0);
+    return { total: entries.length, wins, losses, wr, netPnl: netPnl.toFixed(2) };
+}
+
+function renderJournal() {
+    const entries = loadJournal();
+    const search  = ($('#journalSearchInput') && $('#journalSearchInput').value || '').toLowerCase();
+    const filtered = search
+        ? entries.filter(e => (e.symbol+e.result+e.signal+e.notes).toLowerCase().includes(search))
+        : entries;
+
+    // Stats
+    const s = journalStats(entries);
+    $('#jStatTotal').textContent  = s.total;
+    $('#jStatWins').textContent   = s.wins;
+    $('#jStatLosses').textContent = s.losses;
+    $('#jStatWR').textContent     = s.wr + '%';
+    const netEl = $('#jStatNetPnl');
+    netEl.textContent = (s.netPnl >= 0 ? '+' : '') + s.netPnl + '%';
+    netEl.style.color = s.netPnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+    // Table
+    const tbody = $('#journalTableBody');
+    if (!filtered.length) {
+        tbody.innerHTML = `<tr><td colspan="12" class="empty-row">${search ? 'No matching entries.' : 'No auto-logged entries yet. Trades are added here automatically when they close in the Performance Tracker.'}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = [...filtered].reverse().map((e, i) => {
+        const isLong = e.signal === 'LONG';
+        const pnlVal = parseFloat(e.pnl) || 0;
+        const pnlColor = pnlVal > 0 ? 'var(--green)' : pnlVal < 0 ? 'var(--red)' : '';
+        const resultColor = ['Target 1 hit','Target 2 hit'].includes(e.result) ? 'var(--green)'
+                          : e.result === 'Stopped out' ? 'var(--red)' : 'var(--text-secondary)';
+        const idx = entries.length - 1 - i; // real index in non-reversed array
+        return `<tr class="signal-${isLong ? 'long' : 'short'}">
+            <td style="white-space:nowrap;font-size:0.78rem;color:var(--text-secondary)">${e.date}</td>
+            <td style="font-weight:700">${e.symbol}</td>
+            <td style="color:${isLong ? 'var(--green)' : 'var(--red)'};font-weight:600">${e.signal}</td>
+            <td style="font-size:0.78rem;color:var(--text-secondary)">${e.timeframe || '—'}</td>
+            <td>${e.entry || '—'}</td>
+            <td>${e.sl || '—'}</td>
+            <td>${e.tp1 || '—'}</td>
+            <td>${e.tp2 || '—'}</td>
+            <td style="color:${resultColor};font-weight:600">${e.result}</td>
+            <td style="color:${pnlColor};font-weight:700">${pnlVal ? (pnlVal > 0 ? '+' : '') + pnlVal.toFixed(2) + '%' : '—'}</td>
+            <td style="max-width:180px;font-size:0.78rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.notes || ''}">${e.notes || '—'}</td>
+            <td><button class="btn btn-sm btn-ghost journal-delete-btn" data-idx="${idx}" title="Delete" style="color:var(--red);padding:2px 6px"><i class="fas fa-trash-alt"></i></button></td>
+        </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('.journal-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const entries = loadJournal();
+            entries.splice(parseInt(btn.dataset.idx), 1);
+            saveJournal(entries);
+            renderJournal();
+        });
+    });
+}
+
+function initJournal() {
+    $('#journalSearchInput').addEventListener('input', renderJournal);
+
+    $('#exportJournalBtn').addEventListener('click', () => {
+        const entries = loadJournal();
+        if (!entries.length) { showToast('No entries to export', 'warning'); return; }
+        const headers = ['Date','Symbol','Signal','Timeframe','Entry','SL','T1','T2','Result','P/L%','Notes'];
+        const rows = entries.map(e => [e.date,e.symbol,e.signal,e.timeframe,e.entry,e.sl,e.tp1,e.tp2,e.result,e.pnl,`"${(e.notes||'').replace(/"/g,'""')}"`]);
+        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+        const a = document.createElement('a');
+        a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+        a.download = `trade_journal_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+    });
+
+    $('#clearJournalBtn').addEventListener('click', () => {
+        if (!confirm('Delete ALL journal entries? This cannot be undone.')) return;
+        saveJournal([]);
+        localStorage.removeItem(JOURNAL_LOGGED_IDS_KEY);
+        renderJournal();
+        showToast('Journal cleared', 'info');
+    });
+}
+
+// ══════════════════════════════════════════════════════════════
 // TICKER SPEED CONTROL
 // ══════════════════════════════════════════════════════════════
 function initTickerSpeedControl() {
@@ -2474,5 +2828,391 @@ function initTickerSpeedControl() {
         const speed = e.target.value;
         document.documentElement.style.setProperty('--ticker-speed', speed + 's');
         localStorage.setItem('tickerSpeed', speed);
+    });
+}
+
+// ══════════════════════════════════════════════════════════════
+// ALERT SYSTEM
+// ══════════════════════════════════════════════════════════════
+
+let alertsData = [];
+let _alertPollingTimer = null;
+let _editingAlertId = null;   // null = create mode, string = edit mode
+let _historyAlertId = null;
+
+// ── Polling ──────────────────────────────────────────────────
+
+function startAlertPolling() {
+    if (_alertPollingTimer) return;
+    _alertPollingTimer = setInterval(fetchAlerts, 10000);
+}
+function stopAlertPolling() {
+    if (_alertPollingTimer) { clearInterval(_alertPollingTimer); _alertPollingTimer = null; }
+}
+
+// ── API calls ────────────────────────────────────────────────
+
+async function fetchAlerts() {
+    try {
+        const res = await fetch(`${API_URL}/api/alerts`);
+        if (!res.ok) return;
+        const data = await res.json();
+        alertsData = data.alerts || [];
+        renderAlerts();
+        updateAlertNavBadge();
+        updateAlertStats();
+    } catch (e) { /* backend not reachable */ }
+}
+
+async function apiCreateAlert(cfg) {
+    const res = await fetch(`${API_URL}/api/alerts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Create failed'); }
+    return res.json();
+}
+
+async function apiUpdateAlert(id, cfg) {
+    const res = await fetch(`${API_URL}/api/alerts/${id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Update failed'); }
+    return res.json();
+}
+
+async function apiDeleteAlert(id) {
+    const res = await fetch(`${API_URL}/api/alerts/${id}`, { method: 'DELETE' });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Delete failed'); }
+}
+
+async function apiStartAlert(id) {
+    const res = await fetch(`${API_URL}/api/alerts/${id}/start`, { method: 'POST' });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Start failed'); }
+    return res.json();
+}
+
+async function apiStopAlert(id) {
+    const res = await fetch(`${API_URL}/api/alerts/${id}/stop`, { method: 'POST' });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Stop failed'); }
+    return res.json();
+}
+
+async function apiGetHistory(id) {
+    const res = await fetch(`${API_URL}/api/alerts/${id}/history`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.history || [];
+}
+
+async function apiAcknowledge(id) {
+    await fetch(`${API_URL}/api/alerts/${id}/acknowledge`, { method: 'POST' });
+}
+
+// ── Render ───────────────────────────────────────────────────
+
+function renderAlerts() {
+    const body  = $('#alertListBody');
+    const empty = $('#alertEmptyState');
+    if (!body) return;
+
+    if (alertsData.length === 0) {
+        body.innerHTML = '';
+        if (empty) { empty.style.display = 'flex'; body.appendChild(empty); }
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    body.innerHTML = alertsData.map(a => {
+        const statusCls = a.status === 'running' ? 'running' : a.status === 'error' ? 'error' : 'stopped';
+        const tfTags    = (a.timeframes || []).map(tf => `<span class="alert-meta-tag">${tf}</span>`).join('');
+        const scanTags  = (a.scanner_type || []).map(s => `<span class="alert-meta-tag">${s}</span>`).join('');
+        const freqLabel = a.frequency_minutes >= 60
+            ? `${a.frequency_minutes / 60}h` : `${a.frequency_minutes}m`;
+        const lastRun   = a.last_run_at  ? `Last: ${a.last_run_at}`  : 'Not run yet';
+        const nextRun   = a.next_run_at  ? `<span class="alert-timing-next">Next: ${_countdownLabel(a.next_run_at)}</span>` : '';
+        const errMsg    = a.last_error   ? `<div class="alert-error-msg"><i class="fas fa-exclamation-circle"></i> ${a.last_error}</div>` : '';
+        const isRunning = a.status === 'running';
+
+        return `
+        <div class="alert-row" data-alert-id="${a.alert_id}">
+            <div class="alert-status-dot ${statusCls}"></div>
+            <div class="alert-row-info">
+                <div class="alert-row-name">
+                    ${a.name}
+                    <span class="alert-status-badge ${statusCls}" style="margin-left:8px;">${a.status}</span>
+                    ${a.sound_enabled ? '<i class="fas fa-volume-up" style="color:var(--text-muted);font-size:0.7rem;margin-left:6px;" title="Sound on"></i>' : ''}
+                </div>
+                <div class="alert-row-meta">
+                    ${tfTags}
+                    <span class="alert-meta-tag" style="color:var(--cyan)">${freqLabel}</span>
+                    <span class="alert-meta-tag" style="color:var(--purple)">${a.ma_type}</span>
+                    ${scanTags}
+                </div>
+                ${errMsg}
+            </div>
+            <div class="alert-row-signals">
+                <div class="alert-signal-count">${a.total_signals || 0}</div>
+                <span class="alert-signal-label">signals</span>
+            </div>
+            <div class="alert-row-timing">
+                <div>${lastRun}</div>
+                ${nextRun}
+            </div>
+            <div class="alert-row-actions">
+                ${!isRunning
+                    ? `<button class="btn btn-sm" style="background:var(--green-dim);color:var(--green);border-color:var(--green)"
+                             onclick="handleStartAlert('${a.alert_id}')">
+                           <i class="fas fa-play"></i>
+                       </button>`
+                    : `<button class="btn btn-sm" style="background:var(--red-dim);color:var(--red);border-color:var(--red)"
+                             onclick="handleStopAlert('${a.alert_id}')">
+                           <i class="fas fa-stop"></i>
+                       </button>`
+                }
+                <button class="btn btn-sm btn-ghost" onclick="handleShowHistory('${a.alert_id}', '${a.name.replace(/'/g, "\\'")}')"
+                        title="Signal History">
+                    <i class="fas fa-history"></i>${a.badge_count > 0 ? ` <span style="color:var(--amber);font-weight:700">${a.badge_count}</span>` : ''}
+                </button>
+                <button class="btn btn-sm btn-ghost" onclick="handleEditAlert('${a.alert_id}')"
+                        title="Edit" ${isRunning ? 'disabled style="opacity:0.4;cursor:not-allowed"' : ''}>
+                    <i class="fas fa-pen"></i>
+                </button>
+                <button class="btn btn-sm btn-ghost" onclick="handleDeleteAlert('${a.alert_id}', '${a.name.replace(/'/g, "\\'")}')"
+                        title="Delete" style="color:var(--red)">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function _countdownLabel(nextRunStr) {
+    if (!nextRunStr) return '';
+    const diff = Math.round((new Date(nextRunStr) - Date.now()) / 1000);
+    if (diff <= 0) return 'soon';
+    if (diff < 60) return `${diff}s`;
+    return `${Math.floor(diff / 60)}m ${diff % 60}s`;
+}
+
+function updateAlertNavBadge() {
+    const badge = $('#alertNavBadge');
+    if (!badge) return;
+    const total = alertsData.reduce((sum, a) => sum + (a.badge_count || 0), 0);
+    if (total > 0) {
+        badge.textContent = total > 99 ? '99+' : total;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+function updateAlertStats() {
+    const total   = alertsData.length;
+    const running = alertsData.filter(a => a.status === 'running').length;
+    const signals = alertsData.reduce((s, a) => s + (a.total_signals || 0), 0);
+    const errors  = alertsData.filter(a => a.status === 'error').length;
+    const set = (id, v) => { const el = $(`#${id}`); if (el) el.textContent = v; };
+    set('alertStatTotal',   total);
+    set('alertStatRunning', running);
+    set('alertStatSignals', signals);
+    set('alertStatErrors',  errors);
+}
+
+// ── Handlers ─────────────────────────────────────────────────
+
+async function handleStartAlert(id) {
+    try {
+        await apiStartAlert(id);
+        showToast('Alert started', 'success');
+        await fetchAlerts();
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function handleStopAlert(id) {
+    try {
+        await apiStopAlert(id);
+        showToast('Alert stopped', 'info');
+        await fetchAlerts();
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function handleDeleteAlert(id, name) {
+    if (!confirm(`Delete alert "${name}"?`)) return;
+    try {
+        await apiDeleteAlert(id);
+        showToast(`Alert "${name}" deleted`, 'info');
+        await fetchAlerts();
+        // Hide history panel if it was showing this alert
+        if (_historyAlertId === id) $('#alertHistoryPanel').classList.add('hidden');
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+function handleEditAlert(id) {
+    const alert = alertsData.find(a => a.alert_id === id);
+    if (!alert) return;
+    _editingAlertId = id;
+    $('#alertModalTitle').innerHTML = '<i class="fas fa-pen"></i> Edit Alert';
+    populateModal(alert);
+    $('#alertModal').classList.remove('hidden');
+}
+
+async function handleShowHistory(id, name) {
+    _historyAlertId = id;
+    $('#alertHistoryTitle').textContent = name;
+    $('#alertHistoryPanel').classList.remove('hidden');
+    $('#alertHistoryPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    await apiAcknowledge(id);
+    const history = await apiGetHistory(id);
+    renderAlertHistory(history);
+    await fetchAlerts(); // refresh badge count
+}
+
+function renderAlertHistory(history) {
+    const tbody = $('#alertHistoryBody');
+    if (!tbody) return;
+    if (!history || history.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-row">No signals recorded yet.</td></tr>';
+        return;
+    }
+    const sigCls = s => s === 'LONG' ? 'signal-long' : s === 'SHORT' ? 'signal-short' : '';
+    tbody.innerHTML = history.map(r => `
+        <tr>
+            <td style="font-family:var(--font-mono);font-size:0.73rem;white-space:nowrap">${r._alert_ts || '—'}</td>
+            <td><strong>${r['Crypto Name'] || '—'}</strong></td>
+            <td><span class="tf-badge">${r['Timeperiod'] || '—'}</span></td>
+            <td><span class="signal-badge ${sigCls(r.Signal)}">${r.Signal || '—'}</span></td>
+            <td><span class="scanner-badge">${r.Scanner || '—'}</span></td>
+            <td style="font-size:0.72rem;color:var(--text-muted)">${r.Timestamp || '—'}</td>
+            <td style="font-family:var(--font-mono)">${r.RSI || '—'}</td>
+        </tr>`).join('');
+}
+
+// ── Modal ─────────────────────────────────────────────────────
+
+function openCreateModal() {
+    _editingAlertId = null;
+    $('#alertModalTitle').innerHTML = '<i class="fas fa-plus"></i> New Alert';
+    resetModal();
+    $('#alertModal').classList.remove('hidden');
+}
+
+function closeAlertModal() {
+    $('#alertModal').classList.add('hidden');
+}
+
+function resetModal() {
+    $('#alertNameInput').value = '';
+    $('#alertCryptoCount').value = 20;
+    $('#alertMaType').value = 'ALMA';
+    $('#alertSoundToggle').checked = true;
+    $('#alertAutoMaToggle').checked = true;
+    // Deselect all scanner chips
+    $$('#alertScannerChips .chip').forEach(c => c.classList.remove('active'));
+    // Deselect all TF chips
+    $$('#alertTfChips .chip').forEach(c => c.classList.remove('active'));
+    // Reset freq chips — default 15 min
+    $$('#alertFreqChips .chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.value === '15');
+    });
+}
+
+function populateModal(alert) {
+    $('#alertNameInput').value     = alert.name || '';
+    $('#alertCryptoCount').value   = alert.crypto_count || 20;
+    $('#alertMaType').value        = alert.ma_type || 'ALMA';
+    $('#alertSoundToggle').checked = alert.sound_enabled !== false;
+    $('#alertAutoMaToggle').checked = alert.auto_ma_type !== false;
+
+    const scannerSet = new Set(alert.scanner_type || []);
+    $$('#alertScannerChips .chip').forEach(c =>
+        c.classList.toggle('active', scannerSet.has(c.dataset.value)));
+
+    const tfSet = new Set(alert.timeframes || []);
+    $$('#alertTfChips .chip').forEach(c =>
+        c.classList.toggle('active', tfSet.has(c.dataset.value)));
+
+    $$('#alertFreqChips .chip').forEach(c =>
+        c.classList.toggle('active', parseInt(c.dataset.value) === alert.frequency_minutes));
+}
+
+function readModal() {
+    const name = $('#alertNameInput').value.trim();
+    if (!name) throw new Error('Alert name is required');
+
+    const scannerType = [...$$('#alertScannerChips .chip.active')].map(c => c.dataset.value);
+    if (scannerType.length === 0) throw new Error('Select at least one scanner type');
+
+    const timeframes = [...$$('#alertTfChips .chip.active')].map(c => c.dataset.value);
+    if (timeframes.length === 0) throw new Error('Select at least one timeframe');
+
+    const freqChip = $('#alertFreqChips .chip.active');
+    if (!freqChip) throw new Error('Select a scan frequency');
+
+    return {
+        name,
+        scanner_type:    scannerType,
+        timeframes,
+        crypto_count:    parseInt($('#alertCryptoCount').value) || 20,
+        ma_type:         $('#alertMaType').value,
+        frequency_minutes: parseInt(freqChip.dataset.value),
+        sound_enabled:   $('#alertSoundToggle').checked,
+        auto_ma_type:    $('#alertAutoMaToggle').checked,
+    };
+}
+
+async function handleSaveAlert() {
+    try {
+        const cfg = readModal();
+        if (_editingAlertId) {
+            await apiUpdateAlert(_editingAlertId, cfg);
+            showToast(`Alert "${cfg.name}" updated`, 'success');
+        } else {
+            await apiCreateAlert(cfg);
+            showToast(`Alert "${cfg.name}" created`, 'success');
+        }
+        closeAlertModal();
+        await fetchAlerts();
+    } catch (e) { showToast(e.message, 'error'); }
+}
+
+// ── Single-select helpers for chip groups ─────────────────────
+
+function initSingleSelectChips(groupId) {
+    $$(`#${groupId} .chip`).forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$(`#${groupId} .chip`).forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+        });
+    });
+}
+
+function initMultiSelectChips(groupId) {
+    $$(`#${groupId} .chip`).forEach(chip => {
+        chip.addEventListener('click', () => chip.classList.toggle('active'));
+    });
+}
+
+// ── Init ──────────────────────────────────────────────────────
+
+function initAlerts() {
+    // Multi-select chip groups
+    initMultiSelectChips('alertScannerChips');
+    initMultiSelectChips('alertTfChips');
+    // Single-select frequency
+    initSingleSelectChips('alertFreqChips');
+
+    $('#createAlertBtn')?.addEventListener('click', openCreateModal);
+    $('#closeAlertModalBtn')?.addEventListener('click', closeAlertModal);
+    $('#cancelAlertBtn')?.addEventListener('click', closeAlertModal);
+    $('#saveAlertBtn')?.addEventListener('click', handleSaveAlert);
+    $('#closeAlertHistoryBtn')?.addEventListener('click', () => {
+        $('#alertHistoryPanel').classList.add('hidden');
+        _historyAlertId = null;
+    });
+    // Close modal on overlay click
+    $('#alertModal')?.addEventListener('click', (e) => {
+        if (e.target === $('#alertModal')) closeAlertModal();
     });
 }

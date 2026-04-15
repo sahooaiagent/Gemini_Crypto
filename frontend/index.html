@@ -67,6 +67,17 @@
                 <span>Performance</span>
                 <div class="nav-indicator"></div>
             </a>
+            <a class="nav-link" data-tab="journal" id="nav-journal">
+                <div class="nav-icon"><i class="fas fa-book-open"></i></div>
+                <span>Trade Journal</span>
+                <div class="nav-indicator"></div>
+            </a>
+            <a class="nav-link" data-tab="alerts" id="nav-alerts">
+                <div class="nav-icon"><i class="fas fa-bell"></i></div>
+                <span>Alerts</span>
+                <span class="nav-badge hidden" id="alertNavBadge">0</span>
+                <div class="nav-indicator"></div>
+            </a>
         </nav>
 
         <div class="sidebar-footer">
@@ -199,8 +210,8 @@
                         <button class="chip" data-filter="AMA Pro Now">AMA Pro Now</button>
                         <button class="chip" data-filter="Qwen Now">Qwen Now</button>
                         <button class="chip" data-filter="Both Now">Both Now</button>
-                        <button class="chip" data-filter="Long Conflict">Long Conflict</button>
-                        <button class="chip" data-filter="Short Conflict">Short Conflict</button>
+                        <button class="chip" data-filter="BC">BC</button>
+                        <button class="chip" data-filter="SC">SC</button>
                     </div>
                 </div>
 
@@ -516,6 +527,95 @@
                     <span id="crossResultCount">0 results</span>
                 </div>
             </div>
+            <!-- OB/OS Signal Results Table -->
+            <div class="card" id="obOsSignalsCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-exclamation-triangle"></i> OB / OS Signals</h2>
+                    <div class="card-actions">
+                        <button class="btn btn-sm btn-ghost" id="exportObOsCsvBtn">
+                            <i class="fas fa-download"></i> Export
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-bar">
+                    <div class="search-input-wrap">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="obOsSearchInput" placeholder="Search signals..." autocomplete="off">
+                    </div>
+                    <div class="filter-chips" id="obOsSignalFilterChips">
+                        <button class="chip active" data-filter="all">All</button>
+                        <button class="chip" data-filter="OB">
+                            <span class="chip-dot" style="background:#FF00FF"></span> OB
+                        </button>
+                        <button class="chip" data-filter="OS">
+                            <span class="chip-dot" style="background:#0066FF"></span> OS
+                        </button>
+                    </div>
+                    <select class="filter-dropdown" id="obOsTfFilter">
+                        <option value="all">All Timeframes</option>
+                    </select>
+                </div>
+
+                <!-- Table -->
+                <div class="table-wrap">
+                    <table id="obOsSignalsTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-col="name">
+                                    <span>Asset</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="timeframe">
+                                    <span>Timeframe</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="signal">
+                                    <span>Signal</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="htfrsi">
+                                    <span>HTF RSI</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="htftema">
+                                    <span>HTF TEMA</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="almarsi">
+                                    <span>ALMA RSI</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="almatema">
+                                    <span>ALMA TEMA</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="change">
+                                    <span>Daily Chg</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th>Timestamp</th>
+                                <th class="sortable" data-col="cprcategory">
+                                    <span>CPR</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="obOsSignalsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div class="empty-state" id="obOsEmptyState">
+                        <i class="fas fa-satellite-dish"></i>
+                        <p>No OB/OS extremes detected yet</p>
+                        <span>Run a HILEGA OB or HILEGA OS scan to detect extreme RSI conditions</span>
+                    </div>
+                </div>
+                <div class="table-footer">
+                    <span id="obOsResultCount">0 results</span>
+                </div>
+            </div>
         </section>
 
         <!-- ──── SCANNER TAB ──── -->
@@ -707,6 +807,8 @@
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_long">Long Conflict</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_short">Short Conflict</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_bar1">Bar+1 Action</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="hilega_ob">HILEGA OB</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="hilega_os">HILEGA OS</button>
                                 </div>
                                 <span class="hint-modern" style="margin-top: 12px;">Select scanner strategies for signal detection</span>
                             </div>
@@ -728,6 +830,10 @@
                             </div>
                             <div class="section-content" id="timeframes">
                                 <div class="tf-chips-modern" id="tfChips">
+                                <button class="chip-modern tf-chip" data-tf="1min">1m</button>
+                                <button class="chip-modern tf-chip" data-tf="2min">2m</button>
+                                <button class="chip-modern tf-chip" data-tf="3min">3m</button>
+                                <button class="chip-modern tf-chip" data-tf="4min">4m</button>
                                 <button class="chip-modern tf-chip" data-tf="5min">5m</button>
                                 <button class="chip-modern tf-chip" data-tf="10min">10m</button>
                                 <button class="chip-modern tf-chip" data-tf="15min">15m</button>
@@ -982,7 +1088,7 @@
             <!-- ── TOP 7 LIVE TRADE SETUPS ── -->
             <div class="card" id="tradeSetupsCard">
                 <div class="card-header">
-                    <h2><i class="fas fa-crosshairs"></i> Top 7 Live Trade Setups <span class="ts-timeframe-badge">15m entry · 1h target</span></h2>
+                    <h2><i class="fas fa-crosshairs"></i> Top 7 Live Trade Setups <span class="ts-timeframe-badge">5m entry · 30m target</span></h2>
                     <div class="card-actions">
                         <span id="tradeSetupsTimestamp" class="ts-timestamp"></span>
                         <button class="btn btn-sm btn-ghost" id="refreshSetupsBtn" title="Refresh Setups">
@@ -1081,15 +1187,292 @@
             </div>
         </section>
 
+        <!-- ──── TRADE JOURNAL TAB ──── -->
+        <section class="tab-content" id="tab-journal">
+            <header class="page-header">
+                <div>
+                    <h1 class="page-title">Trade Journal</h1>
+                    <p class="page-subtitle">Closed trades are logged automatically from the Performance Tracker</p>
+                </div>
+            </header>
+
+            <!-- Auto-log info banner -->
+            <div class="card" id="journalEntryCard">
+                <div style="display:flex;align-items:center;gap:12px;padding:14px 4px;">
+                    <i class="fas fa-robot" style="font-size:1.4rem;color:var(--cyan)"></i>
+                    <div>
+                        <div style="font-weight:700;color:var(--text-primary)">Auto-logging active</div>
+                        <div style="font-size:0.82rem;color:var(--text-secondary)">Every time a trade reaches Target 1, Target 2, Stopped Out, or Closed (EOD) in the Performance Tracker it is automatically added here — no manual entry needed.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Journal Stats -->
+            <div class="stats-grid" id="journalStatsGrid" style="margin-top:16px;">
+                <div class="stat-card" data-accent="cyan">
+                    <div class="stat-icon-wrap"><i class="fas fa-list"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="jStatTotal">0</span>
+                        <span class="stat-label">Total Trades</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="green">
+                    <div class="stat-icon-wrap"><i class="fas fa-trophy"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="jStatWins">0</span>
+                        <span class="stat-label">Wins</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="red">
+                    <div class="stat-icon-wrap"><i class="fas fa-times-circle"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="jStatLosses">0</span>
+                        <span class="stat-label">Losses</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="purple">
+                    <div class="stat-icon-wrap"><i class="fas fa-percent"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="jStatWR">0%</span>
+                        <span class="stat-label">Win Rate</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="green">
+                    <div class="stat-icon-wrap"><i class="fas fa-coins"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="jStatNetPnl">0.00%</span>
+                        <span class="stat-label">Net P/L</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Journal Table -->
+            <div class="card" style="margin-top:16px;">
+                <div class="card-header">
+                    <h2><i class="fas fa-table"></i> Journal Log</h2>
+                    <div class="card-actions">
+                        <div class="search-input-wrap" style="min-width:200px;">
+                            <i class="fas fa-search"></i>
+                            <input id="journalSearchInput" type="search" placeholder="Search symbol, result...">
+                        </div>
+                        <button class="btn btn-sm btn-ghost" id="exportJournalBtn" title="Export as CSV"><i class="fas fa-download"></i> Export</button>
+                        <button class="btn btn-sm btn-ghost" id="clearJournalBtn" title="Clear all journal entries" style="color:var(--red)"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+                <div class="performance-wrap">
+                    <table class="performance-table" id="journalTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Symbol</th>
+                                <th>Signal</th>
+                                <th>TF</th>
+                                <th>Entry</th>
+                                <th>SL</th>
+                                <th>T1</th>
+                                <th>T2</th>
+                                <th>Result</th>
+                                <th>P/L %</th>
+                                <th>Notes</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="journalTableBody">
+                            <tr><td colspan="12" class="empty-row">No journal entries yet. Log your first trade above.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════════════════════════════════════════════════════════════
+         ALERTS TAB
+         ════════════════════════════════════════════════════════════════ -->
+        <section class="tab-content" id="tab-alerts">
+            <header class="page-header">
+                <div>
+                    <h1 class="page-title"><i class="fas fa-bell" style="color:var(--amber);margin-right:10px;"></i>Alert Manager</h1>
+                    <p class="page-subtitle">Auto-scan at defined intervals and get Mac desktop notifications when signals fire</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-primary" id="createAlertBtn">
+                        <i class="fas fa-plus"></i> New Alert
+                    </button>
+                </div>
+            </header>
+
+            <!-- Stats row -->
+            <div class="stats-grid alerts-stats-grid">
+                <div class="stat-card" data-accent="cyan">
+                    <div class="stat-icon-wrap"><i class="fas fa-bell"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="alertStatTotal">0</span>
+                        <span class="stat-label">Total Alerts</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="green">
+                    <div class="stat-icon-wrap"><i class="fas fa-play-circle"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="alertStatRunning">0</span>
+                        <span class="stat-label">Running</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="amber">
+                    <div class="stat-icon-wrap"><i class="fas fa-bolt"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="alertStatSignals">0</span>
+                        <span class="stat-label">Signals Found</span>
+                    </div>
+                </div>
+                <div class="stat-card" data-accent="red">
+                    <div class="stat-icon-wrap"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div class="stat-body">
+                        <span class="stat-value" id="alertStatErrors">0</span>
+                        <span class="stat-label">Errors</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert list -->
+            <div class="card" id="alertListCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-list-check"></i> Configured Alerts</h2>
+                </div>
+                <div id="alertListBody">
+                    <div class="alert-empty-state" id="alertEmptyState">
+                        <i class="fas fa-bell-slash"></i>
+                        <p>No alerts configured yet</p>
+                        <span>Click <strong>New Alert</strong> to get started</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Per-alert signal history panel -->
+            <div class="card hidden" id="alertHistoryPanel">
+                <div class="card-header">
+                    <h2><i class="fas fa-history"></i> Signal History — <span id="alertHistoryTitle" style="color:var(--cyan)"></span></h2>
+                    <div class="card-actions">
+                        <button class="btn btn-sm" id="closeAlertHistoryBtn"><i class="fas fa-times"></i> Close</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="data-table" id="alertHistoryTable">
+                        <thead>
+                            <tr>
+                                <th>Alerted At</th>
+                                <th>Asset</th>
+                                <th>TF</th>
+                                <th>Signal</th>
+                                <th>Scanner</th>
+                                <th>Candle</th>
+                                <th>RSI</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alertHistoryBody">
+                            <tr><td colspan="7" class="empty-row">No signals yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
 
     </main>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+     ALERT CREATE / EDIT MODAL
+     ════════════════════════════════════════════════════════════════════ -->
+    <div class="alert-modal-overlay hidden" id="alertModal">
+        <div class="alert-modal-panel">
+            <div class="alert-modal-header">
+                <h3 id="alertModalTitle"><i class="fas fa-bell"></i> New Alert</h3>
+                <button class="btn-icon" id="closeAlertModalBtn"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="alert-modal-body">
+
+                <label class="form-label">Alert Name</label>
+                <input type="text" class="form-input" id="alertNameInput" placeholder="e.g. BTC 15m Conflict">
+
+                <label class="form-label" style="margin-top:16px;">Scanner Type <span class="form-hint">(select one or more)</span></label>
+                <div class="alert-chip-group" id="alertScannerChips">
+                    <button class="chip" data-value="ama_pro">AMA Pro</button>
+                    <button class="chip" data-value="qwen">Qwen</button>
+                    <button class="chip" data-value="ama_pro_now">AMA Pro Now</button>
+                    <button class="chip" data-value="conflict_long">BC</button>
+                    <button class="chip" data-value="conflict_short">SC</button>
+                    <button class="chip" data-value="conflict_bar1">Bar+1</button>
+                    <button class="chip" data-value="hilega_buy">HILEGA Buy</button>
+                    <button class="chip" data-value="hilega_sell">HILEGA Sell</button>
+                    <button class="chip" data-value="hilega_ob">OB</button>
+                    <button class="chip" data-value="hilega_os">OS</button>
+                </div>
+
+                <label class="form-label" style="margin-top:16px;">Timeframes <span class="form-hint">(select one or more)</span></label>
+                <div class="alert-chip-group" id="alertTfChips">
+                    <button class="chip" data-value="2min">2m</button>
+                    <button class="chip" data-value="3min">3m</button>
+                    <button class="chip" data-value="4min">4m</button>
+                    <button class="chip" data-value="5min">5m</button>
+                    <button class="chip" data-value="10min">10m</button>
+                    <button class="chip" data-value="15min">15m</button>
+                    <button class="chip" data-value="30min">30m</button>
+                    <button class="chip" data-value="45min">45m</button>
+                    <button class="chip active" data-value="1hr">1h</button>
+                    <button class="chip" data-value="4hr">4h</button>
+                    <button class="chip" data-value="1 day">1D</button>
+                </div>
+
+                <div class="alert-form-row" style="margin-top:16px;">
+                    <div class="alert-form-group">
+                        <label class="form-label">Crypto Count</label>
+                        <input type="number" class="form-input" id="alertCryptoCount" min="5" max="100" value="20">
+                    </div>
+                    <div class="alert-form-group">
+                        <label class="form-label">MA Type</label>
+                        <select class="form-input" id="alertMaType">
+                            <option value="ALMA">ALMA</option>
+                            <option value="JMA">JMA</option>
+                            <option value="T3">T3</option>
+                            <option value="McGinley">McGinley</option>
+                            <option value="KAMA">KAMA</option>
+                        </select>
+                    </div>
+                </div>
+
+                <label class="form-label" style="margin-top:16px;">Scan Frequency</label>
+                <div class="alert-chip-group" id="alertFreqChips">
+                    <button class="chip" data-value="5">Every 5 min</button>
+                    <button class="chip active" data-value="15">Every 15 min</button>
+                    <button class="chip" data-value="30">Every 30 min</button>
+                    <button class="chip" data-value="60">Every 1 hour</button>
+                </div>
+
+                <div class="alert-toggle-row" style="margin-top:20px;">
+                    <label class="alert-toggle-label">
+                        <input type="checkbox" id="alertSoundToggle" checked>
+                        <span class="alert-toggle-track"></span>
+                        <span>Notification Sound</span>
+                    </label>
+                    <label class="alert-toggle-label">
+                        <input type="checkbox" id="alertAutoMaToggle" checked>
+                        <span class="alert-toggle-track"></span>
+                        <span>Auto MA Type</span>
+                    </label>
+                </div>
+
+            </div>
+            <div class="alert-modal-footer">
+                <button class="btn btn-ghost" id="cancelAlertBtn">Cancel</button>
+                <button class="btn btn-primary" id="saveAlertBtn"><i class="fas fa-save"></i> Save Alert</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ════════════════════════════════════════════════════════════════════
      TOAST NOTIFICATIONS
      ════════════════════════════════════════════════════════════════════ -->
     <div id="toastContainer"></div>
 
-    <script src="app.js?v=28"></script>
+    <script src="app.js?v=31"></script>
 </body>
 
 </html>
