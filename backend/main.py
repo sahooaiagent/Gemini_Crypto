@@ -63,7 +63,7 @@ class ScanRequest(BaseModel):
     adaptation_speed: Optional[str] = "Medium"
     min_bars_between: Optional[int] = 3
     crypto_count: Optional[int] = 20
-    scanner_type: Optional[Union[str, List[str]]] = "ama_pro"  # Single: 'ama_pro', 'qwen', 'both', etc. OR Multiple: ['ama_pro', 'ama_pro_now']
+    scanner_type: Optional[Union[str, List[str]]] = "ama_pro"  # Single: 'ama_pro', 'qwen', 'hilega_buy', 'hilega_sell', 'ob_os', etc. OR Multiple: list of scanner types
     ma_type: Optional[str] = "ALMA"  # Moving Average Type: 'ALMA', 'JMA', 'T3', 'McGinley', 'KAMA'
     auto_ma_type: Optional[bool] = True  # Auto-select MA type based on asset+timeframe (overrides ma_type)
     enable_regime_filter: Optional[bool] = True  # Advanced Filter: Regime Detection
@@ -406,7 +406,7 @@ async def trigger_scan(request: ScanRequest):
                 hilega_results.append(result)
             elif 'CROSS' in scanner_label:
                 cross_results.append(result)
-            elif scanner_label in ('BC', 'SC') or 'Bar+1' in scanner_label:
+            elif scanner_label in ('BC', 'SC'):
                 conflict_results.append(result)
             elif scanner_label == 'GAP':
                 gap_results.append(result)

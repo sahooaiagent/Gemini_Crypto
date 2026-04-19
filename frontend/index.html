@@ -794,10 +794,8 @@
                                 <div class="scanner-type-chips-modern" id="scannerTypeChips">
                                     <button class="chip-modern scanner-chip" data-scanner="ama_pro">AMA Pro Pre</button>
                                     <button class="chip-modern scanner-chip" data-scanner="qwen">Qwen Pre</button>
-                                    <button class="chip-modern scanner-chip" data-scanner="both">Both Pre</button>
                                     <button class="chip-modern scanner-chip" data-scanner="ama_pro_now">AMA Pro Now</button>
                                     <button class="chip-modern scanner-chip" data-scanner="qwen_now">Qwen Now</button>
-                                    <button class="chip-modern scanner-chip" data-scanner="both_now">Both Now</button>
                                     <button class="chip-modern scanner-chip" data-scanner="hilega_buy">HILEGA BUY</button>
                                     <button class="chip-modern scanner-chip" data-scanner="hilega_sell">HILEGA SELL</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_up_vwma">RSI Cross UP VWMA</button>
@@ -806,7 +804,6 @@
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_dn_alma">RSI Cross DN ALMA</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_long">Long Conflict</button>
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_short">Short Conflict</button>
-                                    <button class="chip-modern scanner-chip" data-scanner="conflict_bar1">Bar+1 Action</button>
                                     <button class="chip-modern scanner-chip" data-scanner="hilega_ob">HILEGA OB</button>
                                     <button class="chip-modern scanner-chip" data-scanner="hilega_os">HILEGA OS</button>
                                 </div>
@@ -1132,6 +1129,10 @@
                         <option value="2026-02">February 2026</option>
                         <option value="2026-03">March 2026</option>
                     </select>
+                    <button id="refreshPerformanceBtn" class="btn-icon" style="padding: 8px 14px; background: var(--bg-elevated); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); color: var(--text-primary); cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 0.9rem;" title="Refresh now">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <span id="performanceNextRefresh" style="font-size: 0.85rem; color: var(--text-secondary); min-width: 100px; text-align: right;"></span>
                     <span id="performanceDate" class="ts-timestamp"></span>
                 </div>
                 </div>
@@ -1399,7 +1400,6 @@
                     <button class="chip" data-value="ama_pro_now">AMA Pro Now</button>
                     <button class="chip" data-value="conflict_long">BC</button>
                     <button class="chip" data-value="conflict_short">SC</button>
-                    <button class="chip" data-value="conflict_bar1">Bar+1</button>
                     <button class="chip" data-value="hilega_buy">HILEGA Buy</button>
                     <button class="chip" data-value="hilega_sell">HILEGA Sell</button>
                     <button class="chip" data-value="hilega_ob">OB</button>

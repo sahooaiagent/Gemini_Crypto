@@ -45,10 +45,30 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchResults();
     fetchTradeSetups();   // load setups on page open
 
-    // Initialize performance tracker
-    renderPerformanceTracker(loadPerformanceData().trades, getTodayKey());
-    setInterval(updatePerformanceStatus, 5 * 60 * 1000);
-    updatePerformanceStatus();
+    // Initialize performance tracker with clock-aligned refresh (every 15 minutes at :00, :15, :30, :45)
+    performPerformanceRefresh();
+    scheduleAlignedPerformanceRefresh();
+    // Keep the "Next auto-refresh at" label accurate even when idle
+    setInterval(updatePerformanceRefreshLabel, 30 * 1000);
+
+    // Refresh button handler
+    const refreshBtn = $('#refreshPerformanceBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            refreshBtn.disabled = true;
+            refreshBtn.style.opacity = '0.5';
+            try {
+                performPerformanceRefresh();
+            } catch (err) {
+                console.error('Performance refresh failed:', err);
+            } finally {
+                setTimeout(() => {
+                    refreshBtn.disabled = false;
+                    refreshBtn.style.opacity = '1';
+                }, 400);
+            }
+        });
+    }
 
     // Refresh Setups button
     const refreshSetupsBtn = $('#refreshSetupsBtn');
@@ -685,6 +705,49 @@ function formatRecommendedTime(iso) {
     return `${hh}:${mm}`;
 }
 
+let lastPerformanceRefreshAt = null;
+
+function performPerformanceRefresh() {
+    try {
+        updatePerformanceStatus();
+        lastPerformanceRefreshAt = new Date();
+    } catch (err) {
+        console.error('performPerformanceRefresh failed:', err);
+        if (!lastPerformanceRefreshAt) lastPerformanceRefreshAt = new Date();
+    }
+    updatePerformanceRefreshLabel();
+}
+
+function updatePerformanceRefreshLabel() {
+    const el = $('#performanceNextRefresh');
+    if (!el) return;
+
+    const updated = lastPerformanceRefreshAt || new Date();
+    const hh = String(updated.getHours()).padStart(2, '0');
+    const mm = String(updated.getMinutes()).padStart(2, '0');
+
+    // Next 15-minute boundary from NOW (JS auto-rolls hours)
+    const now = new Date();
+    const nextQuarterMin = (Math.floor(now.getMinutes() / 15) + 1) * 15;
+    const nextTime = new Date(now);
+    nextTime.setMinutes(nextQuarterMin, 0, 0);
+
+    const nextHh = String(nextTime.getHours()).padStart(2, '0');
+    const nextMm = String(nextTime.getMinutes()).padStart(2, '0');
+
+    el.textContent = `Updated ${hh}:${mm} · Next auto-refresh at ${nextHh}:${nextMm}`;
+    el.style.color = 'var(--text-secondary)';
+}
+
+function scheduleAlignedPerformanceRefresh() {
+    const delay = msUntilNextQuarter();
+    setTimeout(() => {
+        performPerformanceRefresh();
+        // After first aligned fire, repeat every 15 minutes
+        setInterval(performPerformanceRefresh, 15 * 60 * 1000);
+    }, delay);
+}
+
 function renderPerformanceTracker(trades, day) {
     const table = $('#performanceTrackerTable');
     const tbody = table.querySelector('tbody');
@@ -708,9 +771,24 @@ function renderPerformanceTracker(trades, day) {
                (trade.timeframe || '').toLowerCase().includes(searchVal);
     });
 
-    if (currentPerformanceSort.col) {
-        const numericCols = ['entry', 'stop_loss', 'target_1', 'target_2'];
-        visibleTrades.sort((a, b) => {
+    // Priority sorting: TRIGGERED + RECOMMENDED first
+    const getPriorityScore = (trade) => {
+        const triggered = trade.status === 'Triggered';
+        const recommended = trade.recommendation_updated;
+        if (triggered && recommended) return 0; // Highest priority
+        if (triggered) return 1;
+        if (recommended) return 2;
+        return 3; // Lower priority
+    };
+
+    visibleTrades.sort((a, b) => {
+        const priorityA = getPriorityScore(a);
+        const priorityB = getPriorityScore(b);
+        if (priorityA !== priorityB) return priorityA - priorityB;
+
+        // If priorities are same, apply column sort if active
+        if (currentPerformanceSort.col) {
+            const numericCols = ['entry', 'stop_loss', 'target_1', 'target_2'];
             let va = a[currentPerformanceSort.col] || '';
             let vb = b[currentPerformanceSort.col] || '';
             if (numericCols.includes(currentPerformanceSort.col)) {
@@ -723,9 +801,9 @@ function renderPerformanceTracker(trades, day) {
 
             if (va < vb) return currentPerformanceSort.asc ? -1 : 1;
             if (va > vb) return currentPerformanceSort.asc ? 1 : -1;
-            return 0;
-        });
-    }
+        }
+        return 0;
+    });
 
     table.querySelectorAll('thead th.sortable').forEach(th => {
         th.classList.remove('asc', 'desc');
@@ -1243,13 +1321,10 @@ function renderResults() {
         const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
         const scannerVal = r.Scanner || '—';
         const badgeMap = {
-            'Both': 'scanner-both',
             'Qwen': 'scanner-qwen',
             'AMA Pro Pre': 'scanner-ama',
             'AMA Pro Now': 'scanner-ama-now',
             'Qwen Now': 'scanner-qwen-now',
-            'Both Now': 'scanner-both-now',
-            'Both Pre': 'scanner-both-entry',
             'BC': 'scanner-conflict-long',
             'SC': 'scanner-conflict-short',
             'Qwen Pre': 'scanner-qwen-entry',
@@ -2051,7 +2126,7 @@ async function runScan(overrideConfig = null) {
         }
 
         // Build scanner label for logging
-        const scannerLabelsMap = { 'both': 'AMA Pro + Qwen', 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'both_now': 'AMA Pro Now + Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'conflict_bar1': 'Bar+1 Action', 'rsi_cross_up_vwma': 'RSI Cross UP VWMA', 'rsi_cross_dn_vwma': 'RSI Cross DN VWMA', 'rsi_cross_up_alma': 'RSI Cross UP ALMA', 'rsi_cross_dn_alma': 'RSI Cross DN ALMA', 'hilega_ob': 'HILEGA OB', 'hilega_os': 'HILEGA OS' };
+        const scannerLabelsMap = { 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'rsi_cross_up_vwma': 'RSI Cross UP VWMA', 'rsi_cross_dn_vwma': 'RSI Cross DN VWMA', 'rsi_cross_up_alma': 'RSI Cross UP ALMA', 'rsi_cross_dn_alma': 'RSI Cross DN ALMA', 'hilega_ob': 'HILEGA OB', 'hilega_os': 'HILEGA OS' };
         scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabelsMap[s] || s).join(' + ') : (scannerLabelsMap[selectedScanners[0]] || selectedScanners[0]));
 
         // Save config for future rescans
