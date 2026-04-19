@@ -24,6 +24,21 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 // ══════════════════════════════════════════════════════════════
+// FORCE CLEANUP ON PAGE LOAD
+// ══════════════════════════════════════════════════════════════
+function forceCleanupPerformanceData() {
+    try {
+        localStorage.removeItem('gemini_performance_tracker');
+        console.log('✓ Performance tracker data cleared on page load');
+    } catch (err) {
+        console.error('Failed to clear performance data:', err);
+    }
+}
+
+// Run cleanup before DOM is ready
+forceCleanupPerformanceData();
+
+// ══════════════════════════════════════════════════════════════
 // INITIALIZATION
 // ══════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
