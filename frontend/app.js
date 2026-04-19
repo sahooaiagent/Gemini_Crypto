@@ -54,10 +54,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Refresh button handler
     const refreshBtn = $('#refreshPerformanceBtn');
     if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => {
+        refreshBtn.addEventListener('click', async () => {
             refreshBtn.disabled = true;
             refreshBtn.style.opacity = '0.5';
             try {
+                // Try to load from backend first
+                const backendData = await loadPerformanceTrackerFromBackend();
+                if (backendData) {
+                    renderPerformanceTracker(backendData.trades, backendData.day);
+                }
                 performPerformanceRefresh();
             } catch (err) {
                 console.error('Performance refresh failed:', err);
@@ -77,6 +82,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Periodic refresh
     setInterval(fetchMarketData, 60000);
     setInterval(() => { if (!scanRunning) fetchResults(); }, 30000);
+
+    // Load Performance Tracker from backend on page load
+    loadPerformanceTrackerFromBackend().then(data => {
+        if (data) {
+            renderPerformanceTracker(data.trades, data.day);
+        }
+    });
+
+    // Sync Performance Tracker to backend every 30 seconds
+    setInterval(syncPerformanceTrackerToBackend, 30000);
 
     // Clock-aligned 15-minute refresh (fires at :00, :15, :30, :45)
     scheduleAlignedSetupRefresh();
@@ -312,6 +327,50 @@ function isRoundQuarterTime(date) {
     return minutes % 15 === 0;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PERFORMANCE TRACKER BACKEND SYNC
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function syncPerformanceTrackerToBackend() {
+    try {
+        const data = loadPerformanceData();
+        if (!data) return;
+
+        const response = await fetch('/api/performance-tracker', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            console.error('Failed to sync Performance Tracker to backend');
+            return;
+        }
+
+        console.log('Performance Tracker synced to backend');
+    } catch (err) {
+        console.error('Error syncing Performance Tracker:', err);
+    }
+}
+
+async function loadPerformanceTrackerFromBackend() {
+    try {
+        const response = await fetch('/api/performance-tracker');
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        if (data && data.day) {
+            // Save to localStorage so it works offline
+            localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify(data));
+            console.log('Performance Tracker loaded from backend');
+            return data;
+        }
+    } catch (err) {
+        console.error('Error loading Performance Tracker from backend:', err);
+    }
+    return null;
+}
+
 function loadPerformanceData() {
     try {
         const raw = localStorage.getItem(PERFORMANCE_STORAGE_KEY);
@@ -365,6 +424,8 @@ function loadPerformanceData() {
 
 function savePerformanceData(data) {
     localStorage.setItem(PERFORMANCE_STORAGE_KEY, JSON.stringify(data));
+    // Async sync to backend (don't wait for it)
+    syncPerformanceTrackerToBackend().catch(err => console.error('Async sync failed:', err));
 }
 
 function resetPerformanceData() {

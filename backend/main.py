@@ -1127,10 +1127,39 @@ async def acknowledge_alert(alert_id: str):
     return {"status": "acknowledged"}
 
 
+# ════════════════════════════════════════════════════════════════════
+# PERFORMANCE TRACKER API ENDPOINTS
+# ════════════════════════════════════════════════════════════════════
+
+# In-memory storage for performance tracker data
+performance_tracker_data = {}
+
+class PerformanceTrackerData(BaseModel):
+    day: str
+    trades: List[Dict[str, Any]]
+    history: Dict[str, Any]
+
+@app.get("/api/performance-tracker")
+async def get_performance_tracker():
+    """Fetch current performance tracker data"""
+    return performance_tracker_data or {"day": None, "trades": [], "history": {}}
+
+@app.post("/api/performance-tracker")
+async def save_performance_tracker(data: PerformanceTrackerData):
+    """Save performance tracker data from frontend"""
+    global performance_tracker_data
+    performance_tracker_data = data.dict()
+    logging.info(f"Performance Tracker saved: {len(data.trades)} trades for {data.day}")
+    return {"status": "success", "message": "Performance tracker data saved"}
+
+# ════════════════════════════════════════════════════════════════════
+# STATIC FILES & FRONTEND
+# ════════════════════════════════════════════════════════════════════
+
 # Serve static frontend files
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.isdir(frontend_dir):
-    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
 @app.on_event("shutdown")
 async def shutdown_event():
