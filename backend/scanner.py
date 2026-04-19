@@ -2587,8 +2587,8 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     """
     Scans a single symbol across all requested timeframes.
     Uses a semaphore to limit concurrent requests.
-    Supports scanner_type: 'ama_pro', 'qwen', 'both', 'ama_pro_now', 'qwen_now', 'both_now', 'all'
-    Or a list of scanner types: ['ama_pro', 'ama_pro_now']
+    Supports scanner_type: 'ama_pro', 'qwen', 'hilega_buy', 'hilega_sell', 'ob_os', 'adaptive_cross', 'all'
+    Or a list of scanner types: ['ama_pro', 'qwen', 'hilega_buy']
     """
     adaptation_speed = kwargs.get('adaptation_speed', 'Medium')
     min_bars_between = kwargs.get('min_bars_between', 3)
@@ -2620,10 +2620,10 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     # Support for multiple scanner types (list) or single scanner type (string)
     if isinstance(scanner_type, list):
         # List of specific scanners requested
-        run_ama = 'ama_pro' in scanner_type or 'both' in scanner_type or 'all' in scanner_type
-        run_qwen = 'qwen' in scanner_type or 'both' in scanner_type or 'all' in scanner_type
-        run_ama_now = 'ama_pro_now' in scanner_type or 'both_now' in scanner_type or 'all' in scanner_type
-        run_qwen_now = 'qwen_now' in scanner_type or 'both_now' in scanner_type or 'all' in scanner_type
+        run_ama = 'ama_pro' in scanner_type or 'all' in scanner_type
+        run_qwen = 'qwen' in scanner_type or 'all' in scanner_type
+        run_ama_now = 'ama_pro_now' in scanner_type or 'all' in scanner_type
+        run_qwen_now = 'qwen_now' in scanner_type or 'all' in scanner_type
         run_hilega_buy = 'hilega_buy' in scanner_type or 'all' in scanner_type
         run_hilega_sell = 'hilega_sell' in scanner_type or 'all' in scanner_type
         run_cross_up = 'rsi_cross_up_vwma' in scanner_type or 'all' in scanner_type
@@ -2632,15 +2632,14 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_cross_dn_alma = 'rsi_cross_dn_alma' in scanner_type or 'all' in scanner_type
         run_conflict_long  = 'conflict_long'  in scanner_type or 'all' in scanner_type
         run_conflict_short = 'conflict_short' in scanner_type or 'all' in scanner_type
-        run_conflict_bar1  = 'conflict_bar1'  in scanner_type or 'all' in scanner_type
         run_hilega_ob = 'hilega_ob' in scanner_type or 'all' in scanner_type
         run_hilega_os = 'hilega_os' in scanner_type or 'all' in scanner_type
     else:
         # Single scanner type (original logic)
-        run_ama = scanner_type in ('ama_pro', 'both', 'all')
-        run_qwen = scanner_type in ('qwen', 'both', 'all')
-        run_ama_now = scanner_type in ('ama_pro_now', 'both_now', 'all')
-        run_qwen_now = scanner_type in ('qwen_now', 'both_now', 'all')
+        run_ama = scanner_type in ('ama_pro', 'all')
+        run_qwen = scanner_type in ('qwen', 'all')
+        run_ama_now = scanner_type in ('ama_pro_now', 'all')
+        run_qwen_now = scanner_type in ('qwen_now', 'all')
         run_hilega_buy = scanner_type in ('hilega_buy', 'all')
         run_hilega_sell = scanner_type in ('hilega_sell', 'all')
         run_cross_up = scanner_type in ('rsi_cross_up_vwma', 'all')
@@ -2649,7 +2648,6 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_cross_dn_alma = scanner_type in ('rsi_cross_dn_alma', 'all')
         run_conflict_long  = scanner_type in ('conflict_long',  'all')
         run_conflict_short = scanner_type in ('conflict_short', 'all')
-        run_conflict_bar1  = scanner_type in ('conflict_bar1',  'all')
         run_hilega_ob = scanner_type in ('hilega_ob', 'all')
         run_hilega_os = scanner_type in ('hilega_os', 'all')
 
@@ -2715,54 +2713,6 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     if signal_q:
                         qwen_signal = (signal_q, rsi_q, open_val_q, close_val_q)
 
-                # Run AMA Pro Now scanner (current/forming candle) - route based on MA type
-                ama_now_signal = None
-                if run_ama_now and len(df) >= 200:
-                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now, cts_now, _cs = await loop.run_in_executor(
-                            executor,
-                            lambda tf=tf, ma=ma_type, reg=enable_regime_filter, vol=enable_volume_filter, ang=enable_angle_filter: apply_qwen_multi_ma(
-                                df.copy(),
-                                ma_type=ma,
-                                tf_input=tf,
-                                use_current_candle=True,
-                                adaptation_speed=adaptation_speed,
-                                min_bars_between=min_bars_between,
-                                enable_regime_filter=reg,
-                                enable_volume_filter=vol,
-                                enable_angle_filter=ang,
-                                auto_type=auto_ma_type
-                            )
-                        )
-                    else:
-                        signal, angle, tema_gap, rsi, open_val, close_val, sig_type = await loop.run_in_executor(
-                            executor,
-                            lambda tf=tf: apply_ama_pro_tema(
-                                df.copy(),
-                                tf_input=tf,
-                                use_current_candle=True,
-                                adaptation_speed=adaptation_speed,
-                                min_bars_between=min_bars_between
-                            )
-                        )
-                        used_ma_now = 'TEMA'
-                        cts_now = None
-                    if signal:
-                        ama_now_signal = (signal, angle, tema_gap, rsi, open_val, close_val, sig_type, used_ma_now, cts_now)
-
-                # Run Qwen Now scanner (current/forming candle)
-                qwen_now_signal = None
-                if run_qwen_now and len(df) >= 100:
-                    signal_q, _, _, rsi_q, open_val_q, close_val_q = await loop.run_in_executor(
-                        executor,
-                        lambda tf=tf: apply_qwen_scanner(
-                            df.copy(),
-                            tf_input=tf,
-                            use_current_candle=True
-                        )
-                    )
-                    if signal_q:
-                        qwen_now_signal = (signal_q, rsi_q, open_val_q, close_val_q)
 
                 # ── Helper to append a result row ──
                 def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None, open_val=None, close_val=None, sig_type=None, ma_type_used=None, candle_ts=None):
@@ -2798,45 +2748,11 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
                     })
 
-                # ── Build results for closed-candle scanners (AMA Pro Pre = previous candle) ──
-                ama_label = 'AMA Pro Pre'
-
-                if run_ama and run_qwen:
-                    # "Both" or "All" mode for closed-candle pair
-                    if ama_signal and qwen_signal:
-                        if ama_signal[0] == qwen_signal[0]:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'Both', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
-                        else:
-                            add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
-                            add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
-                    elif ama_signal:
-                        add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
-                    elif qwen_signal:
-                        add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
-                elif run_ama and ama_signal:
-                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], ama_label, ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
-                elif run_qwen and qwen_signal:
+                # Build results: AMA Pro, Qwen
+                if run_ama and ama_signal:
+                    add_result(ama_signal[0], ama_signal[1], ama_signal[2], 'AMA Pro', ama_signal[3], ama_signal[4], ama_signal[5], ama_signal[6], ma_type_used=ama_signal[7], candle_ts=ama_signal[8])
+                if run_qwen and qwen_signal:
                     add_result(qwen_signal[0], None, None, 'Qwen', qwen_signal[1], qwen_signal[2], qwen_signal[3], None)
-
-                # ── Build results for current-candle scanners (AMA Pro Now / Qwen Now) ──
-                ama_now_label = 'AMA Pro Now'
-
-                if run_ama_now and run_qwen_now:
-                    # "Both Now" or "All" mode for current-candle pair
-                    if ama_now_signal and qwen_now_signal:
-                        if ama_now_signal[0] == qwen_now_signal[0]:
-                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], 'Both Now', ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7], candle_ts=ama_now_signal[8])
-                        else:
-                            add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7], candle_ts=ama_now_signal[8])
-                            add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
-                    elif ama_now_signal:
-                        add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7], candle_ts=ama_now_signal[8])
-                    elif qwen_now_signal:
-                        add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
-                elif run_ama_now and ama_now_signal:
-                    add_result(ama_now_signal[0], ama_now_signal[1], ama_now_signal[2], ama_now_label, ama_now_signal[3], ama_now_signal[4], ama_now_signal[5], ama_now_signal[6], ma_type_used=ama_now_signal[7], candle_ts=ama_now_signal[8])
-                elif run_qwen_now and qwen_now_signal:
-                    add_result(qwen_now_signal[0], None, None, 'Qwen Now', qwen_now_signal[1], qwen_now_signal[2], qwen_now_signal[3], None)
 
                 # ── CONFLICT CANDLE DETECTION ──
                 # Long Conflict : raw MA crossover bullish + candle is bearish (close < open)
@@ -2886,38 +2802,6 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                             cs_label = 'SC'
                             add_result(cs_signal, cs_angle, cs_gap, cs_label,
                                        cs_rsi, cs_open, cs_close, cs_sig_type, ma_type_used=cs_used_ma, candle_ts=cs_cts)
-
-                if run_conflict_bar1 and len(df) >= 200:
-                    if ma_type in ['ALMA', 'JMA', 'T3', 'McGinley', 'KAMA', 'HMA', 'ZLEMA', 'Gaussian']:
-                        b1_signal, b1_angle, b1_gap, b1_rsi, b1_open, b1_close, b1_sig_type, b1_used_ma, b1_cts, b1_state = await loop.run_in_executor(
-                            executor,
-                            lambda tf=tf, ma=ma_type: apply_qwen_multi_ma(
-                                df.copy(),
-                                ma_type=ma,
-                                tf_input=tf,
-                                adaptation_speed=adaptation_speed,
-                                min_bars_between=min_bars_between,
-                                enable_regime_filter=enable_regime_filter,
-                                enable_volume_filter=enable_volume_filter,
-                                enable_angle_filter=enable_angle_filter,
-                                auto_type=auto_ma_type,
-                                conflict_type='bar1'
-                            )
-                        )
-                        if b1_signal and b1_sig_type:
-                            _bar1_label_map = {
-                                'BAR1_ENTER_L':    'Bar+1: ENTER (L)',
-                                'BAR1_ENTER_S':    'Bar+1: ENTER (S)',
-                                'BAR1_TREND_L':    'Bar+1: TREND (L)',
-                                'BAR1_TREND_S':    'Bar+1: TREND (S)',
-                                'BAR1_SK2_REV_S':  'Bar+1: SHORT (S)',
-                                'BAR1_SK2_REV_L':  'Bar+1: LONG (L)',
-                                'BAR1_SK3_RECOV_L':'Bar+1: RE-L (L)',
-                                'BAR1_SK3_RECOV_S':'Bar+1: RE-S (S)',
-                            }
-                            b1_label = _bar1_label_map.get(b1_sig_type, 'Bar+1')
-                            add_result(b1_signal, b1_angle, b1_gap, b1_label,
-                                       b1_rsi, b1_open, b1_close, b1_sig_type, ma_type_used=b1_used_ma, candle_ts=b1_cts)
 
                 # ── HILEGA SCANNER LOGIC ──
                 # HILEGA uses a different result structure and is mutually exclusive with AMA/Qwen

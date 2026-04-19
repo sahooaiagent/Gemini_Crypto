@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "Gemini Scanner Backend + Frontend",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["backend/main.py"],
+      "runtimeExecutable": "/usr/bin/python3",
+      "runtimeArgs": ["-m", "http.server", "8001", "--directory", "/Users/sushantakumarsahoo/Downloads/Gemini_Crypto/frontend"],
       "port": 8001
     }
   ]

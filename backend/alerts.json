@@ -1,0 +1,60 @@
+[
+  {
+    "alert_id": "c5be2360-5036-4f69-91b2-4b01e80f46db",
+    "name": "OBOS",
+    "scanner_type": [
+      "hilega_ob",
+      "hilega_os"
+    ],
+    "timeframes": [
+      "5min",
+      "10min",
+      "15min"
+    ],
+    "crypto_count": 10,
+    "ma_type": "ALMA",
+    "frequency_minutes": 15,
+    "sound_enabled": true,
+    "adaptation_speed": "Medium",
+    "min_bars_between": 3,
+    "auto_ma_type": true,
+    "enable_regime_filter": true,
+    "enable_volume_filter": false,
+    "enable_angle_filter": true,
+    "enable_tema_filter": false,
+    "enable_vwap_filter": false,
+    "enable_volume_filter_cross": false,
+    "enable_htf_rsi_filter": false,
+    "enable_cpr_narrow_filter": false
+  },
+  {
+    "alert_id": "5eb499d4-4639-4916-9b64-60f55563a731",
+    "name": "Buy+Sell Conflict",
+    "scanner_type": [
+      "conflict_long",
+      "conflict_short"
+    ],
+    "timeframes": [
+      "30min",
+      "45min",
+      "1hr",
+      "4hr",
+      "1 day"
+    ],
+    "crypto_count": 20,
+    "ma_type": "ALMA",
+    "frequency_minutes": 15,
+    "sound_enabled": true,
+    "adaptation_speed": "Medium",
+    "min_bars_between": 3,
+    "auto_ma_type": true,
+    "enable_regime_filter": true,
+    "enable_volume_filter": false,
+    "enable_angle_filter": true,
+    "enable_tema_filter": false,
+    "enable_vwap_filter": false,
+    "enable_volume_filter_cross": false,
+    "enable_htf_rsi_filter": false,
+    "enable_cpr_narrow_filter": false
+  }
+]

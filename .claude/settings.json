@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "curl -s -o /dev/null -w '%{http_code}' http://localhost:8001/ | grep -q '200' && echo '{\"continue\": true}' || echo '{\"continue\": true}'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
