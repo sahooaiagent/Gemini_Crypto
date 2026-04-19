@@ -1148,7 +1148,7 @@ async def get_performance_tracker():
 async def save_performance_tracker(data: PerformanceTrackerData):
     """Save performance tracker data from frontend"""
     global performance_tracker_data
-    performance_tracker_data = data.dict()
+    performance_tracker_data = data.model_dump()
     logging.info(f"Performance Tracker saved: {len(data.trades)} trades for {data.day}")
     return {"status": "success", "message": "Performance tracker data saved"}
 
