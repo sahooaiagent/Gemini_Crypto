@@ -678,7 +678,7 @@ function updatePerformanceStatus() {
         savePerformanceData(data);
         // Auto-log newly closed trades to the journal
         data.trades.forEach(trade => {
-            if (['Target 1 hit', 'Target 2 hit', 'Stopped out'].includes(trade.status)) {
+            if (['Target 1 hit', 'Target 2 hit', 'Stopped out', 'Closed (EOD)'].includes(trade.status)) {
                 autoLogClosedTradeToJournal(trade);
             }
         });
