@@ -1,19 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini Scanner | Enterprise Terminal</title>
-    <meta name="description" content="Enterprise-grade financial signal scanner with real-time market analysis">
+    <title>Gemini Scanner | Next-Gen Signal Terminal</title>
+    <meta name="description" content="Next-generation financial signal scanner with real-time market analysis">
+    <meta name="theme-color" content="#030306">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="styles.css?v=9">
     <link rel="stylesheet" href="modern-config.css?v=1">
+    <link rel="stylesheet" href="design-system.css?v=1">
+    <script>
+        // Restore persisted theme BEFORE paint (avoid flash).
+        // Matches the key used by app.js initThemeToggle().
+        try {
+            var t = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {}
+    </script>
 </head>
 
 <body>
@@ -177,11 +187,6 @@
             <div class="card" id="signalsCard">
                 <div class="card-header">
                     <h2><i class="fas fa-bolt"></i> AMA Pro Signals</h2>
-                    <div class="card-actions">
-                        <button class="btn btn-sm btn-ghost" id="exportCsvBtn">
-                            <i class="fas fa-download"></i> Export
-                        </button>
-                    </div>
                 </div>
 
                 <!-- Filters -->
@@ -232,6 +237,10 @@
                                     <span>Signal</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
+                                <th class="sortable" data-col="volume">
+                                    <span>Volume</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                                 <th class="sortable" data-col="angle">
                                     <span>Angle</span>
                                     <i class="fas fa-sort sort-icon"></i>
@@ -280,11 +289,6 @@
             <div class="card" id="conflictSignalsCard">
                 <div class="card-header">
                     <h2><i class="fas fa-bolt"></i> Conflict Signals</h2>
-                    <div class="card-actions">
-                        <button class="btn btn-sm btn-ghost" id="exportConflictCsvBtn">
-                            <i class="fas fa-download"></i> Export
-                        </button>
-                    </div>
                 </div>
 
                 <!-- Filters -->
@@ -345,11 +349,6 @@
             <div class="card" id="hilegaSignalsCard">
                 <div class="card-header">
                     <h2><i class="fas fa-chart-line"></i> HILEGA Signals</h2>
-                    <div class="card-actions">
-                        <button class="btn btn-sm btn-ghost" id="exportHilegaCsvBtn">
-                            <i class="fas fa-download"></i> Export
-                        </button>
-                    </div>
                 </div>
 
                 <!-- Filters -->
@@ -387,6 +386,10 @@
                                 </th>
                                 <th class="sortable" data-col="signal">
                                     <span>Signal</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="volume">
+                                    <span>Volume</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
                                 <th class="sortable" data-col="angle">
@@ -474,6 +477,10 @@
                                     <span>Signal</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
+                                <th class="sortable" data-col="volume">
+                                    <span>Volume</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                                 <th class="sortable" data-col="candle">
                                     <span>Candle</span>
                                     <i class="fas fa-sort sort-icon"></i>
@@ -531,11 +538,6 @@
             <div class="card" id="obOsSignalsCard">
                 <div class="card-header">
                     <h2><i class="fas fa-exclamation-triangle"></i> OB / OS Signals</h2>
-                    <div class="card-actions">
-                        <button class="btn btn-sm btn-ghost" id="exportObOsCsvBtn">
-                            <i class="fas fa-download"></i> Export
-                        </button>
-                    </div>
                 </div>
 
                 <!-- Filters -->
@@ -573,6 +575,10 @@
                                 </th>
                                 <th class="sortable" data-col="signal">
                                     <span>Signal</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="volume">
+                                    <span>Volume</span>
                                     <i class="fas fa-sort sort-icon"></i>
                                 </th>
                                 <th class="sortable" data-col="htfrsi">
@@ -614,6 +620,79 @@
                 </div>
                 <div class="table-footer">
                     <span id="obOsResultCount">0 results</span>
+                </div>
+            </div>
+
+            <!-- BLAST Signal Results Table -->
+            <div class="card" id="blastSignalsCard">
+                <div class="card-header">
+                    <h2 id="blastSignalsHeader"><i class="fas fa-fire"></i> BLAST Signals <span class="blast-threshold-label" id="blastThresholdLabel">— threshold: 5.0x</span></h2>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-bar">
+                    <div class="search-input-wrap">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="blastSearchInput" placeholder="Search signals..." autocomplete="off">
+                    </div>
+                    <div class="filter-chips" id="blastSignalFilterChips">
+                        <button class="chip active" data-filter="all">All</button>
+                        <button class="chip" data-filter="LONG">
+                            <span class="chip-dot" style="background:#00FF00"></span> LONG
+                        </button>
+                        <button class="chip" data-filter="SHORT">
+                            <span class="chip-dot" style="background:#FF0000"></span> SHORT
+                        </button>
+                    </div>
+                    <select class="filter-dropdown" id="blastTfFilter">
+                        <option value="all">All Timeframes</option>
+                    </select>
+                </div>
+
+                <!-- Table -->
+                <div class="table-wrap">
+                    <table id="blastSignalsTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-col="name">
+                                    <span>Asset</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="timeframe">
+                                    <span>Timeframe</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="signal">
+                                    <span>Signal</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="volume">
+                                    <span>Volume</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="change">
+                                    <span>Daily Chg</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th>Timestamp</th>
+                                <th class="sortable" data-col="cprcategory">
+                                    <span>CPR</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="blastSignalsBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                    <div class="empty-state" id="blastEmptyState">
+                        <i class="fas fa-bolt"></i>
+                        <p>No BLAST signals detected yet</p>
+                        <span>Run a BLAST scan to detect explosive volume + RSI crossover patterns</span>
+                    </div>
+                </div>
+                <div class="table-footer">
+                    <span id="blastResultCount">0 results</span>
                 </div>
             </div>
         </section>
@@ -806,6 +885,7 @@
                                     <button class="chip-modern scanner-chip" data-scanner="conflict_short">Short Conflict</button>
                                     <button class="chip-modern scanner-chip" data-scanner="hilega_ob">HILEGA OB</button>
                                     <button class="chip-modern scanner-chip" data-scanner="hilega_os">HILEGA OS</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="blast">🔥 BLAST</button>
                                 </div>
                                 <span class="hint-modern" style="margin-top: 12px;">Select scanner strategies for signal detection</span>
                             </div>
@@ -924,6 +1004,26 @@
                                     </div>
                                 </div>
                                 <span class="hint-modern" style="margin-top: 12px;">HILEGA BUY triggers when True RSI ≤ threshold | HILEGA SELL triggers when True RSI ≥ threshold</span>
+                            </div>
+                        </div>
+
+                        <!-- BLAST Parameters Section -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse collapsed" data-collapse="blast-params">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-fire section-icon"></i>
+                                    <span class="section-title">🔥 BLAST Parameters</span>
+                                </div>
+                                <i class="fas fa-chevron-down collapse-icon"></i>
+                            </div>
+                            <div class="section-content collapsed" id="blast-params">
+                                <div class="params-row-modern">
+                                    <div class="param-group-modern">
+                                        <label for="blastVolumeMultiplier">Volume Surge Ratio (× SMA 20)</label>
+                                        <input type="number" id="blastVolumeMultiplier" class="select-modern" value="5" min="1" max="100" step="0.5">
+                                    </div>
+                                </div>
+                                <span class="hint-modern" style="margin-top: 12px;">BLAST triggers when current candle volume ≥ ratio × SMA(20). Typical: 2x (common) • 5x (default) • 10x (rare explosive).</span>
                             </div>
                         </div>
 
@@ -1256,7 +1356,6 @@
                             <i class="fas fa-search"></i>
                             <input id="journalSearchInput" type="search" placeholder="Search symbol, result...">
                         </div>
-                        <button class="btn btn-sm btn-ghost" id="exportJournalBtn" title="Export as CSV"><i class="fas fa-download"></i> Export</button>
                         <button class="btn btn-sm btn-ghost" id="clearJournalBtn" title="Clear all journal entries" style="color:var(--red)"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
@@ -1473,6 +1572,8 @@
     <div id="toastContainer"></div>
 
     <script src="app.js?v=31"></script>
+    <script src="chrome.js?v=1"></script>
+    <script src="content-polish.js?v=1"></script>
 </body>
 
 </html>
