@@ -4,57 +4,62 @@
    Inspired by: Gumroad, Figma, Contemporary design trends
    ═══════════════════════════════════════════════════════════════════ */
 
-/* ── NEO-BRUTALIST DESIGN TOKENS ── */
+/* ── HYBRID DESIGN TOKENS: GLASSMORPHISM + NEO-BRUTALISM ── */
 :root {
-    /* Core palette — High contrast neo-brutalism */
-    --bg-deepest: #000000;
-    --bg-deep: #0A0A0A;
-    --bg-surface: #141414;
-    --bg-elevated: #1F1F1F;
-    --bg-hover: #2A2A2A;
+    /* Core palette — Dark with refined contrast */
+    --bg-deepest: #0A0A0E;
+    --bg-deep: #0F1419;
+    --bg-surface: #151A24;
+    --bg-elevated: #1E2535;
+    --bg-hover: #262E3E;
 
-    /* Accent colors — Bold, saturated */
+    /* Accent colors — Vibrant but refined */
     --cyan: #00D9FF;
-    --cyan-dim: rgba(0, 217, 255, 0.20);
-    --cyan-glow: rgba(0, 217, 255, 0.5);
-    --green: #00FF88;
-    --green-dim: rgba(0, 255, 136, 0.15);
-    --red: #FF3366;
-    --red-dim: rgba(255, 51, 102, 0.15);
-    --purple: #BB86FC;
-    --purple-dim: rgba(187, 134, 252, 0.15);
-    --amber: #FFD700;
-    --amber-dim: rgba(255, 215, 0, 0.15);
+    --cyan-dim: rgba(0, 217, 255, 0.18);
+    --cyan-glow: rgba(0, 217, 255, 0.45);
+    --green: #00F087;
+    --green-dim: rgba(0, 240, 135, 0.16);
+    --red: #FF3B66;
+    --red-dim: rgba(255, 59, 102, 0.16);
+    --purple: #B580FC;
+    --purple-dim: rgba(181, 128, 252, 0.16);
+    --amber: #FFD600;
+    --amber-dim: rgba(255, 214, 0, 0.16);
 
-    /* Text — Maximum contrast */
+    /* Text — High contrast */
     --text-primary: #FFFFFF;
-    --text-secondary: #B0B0B0;
-    --text-muted: #808080;
+    --text-secondary: #A8B2BF;
+    --text-muted: #7A8491;
 
-    /* Brutalist borders */
-    --border-thick: 3px solid #FFFFFF;
-    --border-medium: 2px solid #FFFFFF;
-    --border-thin: 1px solid #404040;
+    /* Hybrid borders */
+    --border-thick: 2px solid rgba(255, 255, 255, 0.25);
+    --border-medium: 1.5px solid rgba(255, 255, 255, 0.18);
+    --border-thin: 1px solid rgba(255, 255, 255, 0.08);
 
     /* Sizes */
     --sidebar-w: 260px;
     --ticker-h: 38px;
-    --radius: 0px;
-    --radius-sm: 0px;
-    --radius-xs: 0px;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-xs: 6px;
 
-    /* Fonts — Modern tech stack */
+    /* Fonts */
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-    /* Transitions — Snappy micro-interactions */
+    /* Transitions — Smooth elegance */
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-    /* Neo-brutalist gradients */
-    --grad-long: linear-gradient(135deg, #00FF88 0%, #00D9FF 100%);
-    --grad-short: linear-gradient(135deg, #FF3366 0%, #FF6B9D 100%);
-    --grad-aurora: linear-gradient(90deg, #00D9FF 0%, #BB86FC 50%, #FF3366 100%);
+    /* Gradients */
+    --grad-long: linear-gradient(135deg, #00F087 0%, #00D9FF 100%);
+    --grad-short: linear-gradient(135deg, #FF3B66 0%, #FF75A0 100%);
+    --grad-aurora: linear-gradient(120deg, #00D9FF 0%, #B580FC 50%, #FF3B66 100%);
+
+    /* Glass effects */
+    --glass-bg: rgba(20, 26, 36, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-blur: blur(18px);
 }
 
 /* ── LIGHT THEME — PREMIUM ENTERPRISE ── */
@@ -803,14 +808,15 @@ body {
 }
 
 .page-title {
-    font-size: 2rem;
-    font-weight: 900;
-    letter-spacing: -1px;
+    font-size: 1.85rem;
+    font-weight: 800;
+    letter-spacing: -0.6px;
     color: var(--text-primary);
-    text-transform: uppercase;
-    border-bottom: 3px solid var(--cyan);
-    padding-bottom: 16px;
-    display: inline-block;
+    background: linear-gradient(135deg, var(--text-primary) 0%, var(--cyan) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
 }
 
 .page-subtitle {
@@ -886,18 +892,21 @@ body {
    CARDS
    ══════════════════════════════════════════════════════════════ */
 .card {
-    background: #000000;
-    border: 3px solid #FFFFFF;
-    padding: 40px;
-    margin-bottom: 40px;
-    transition: all 0.2s var(--ease-out);
-    box-shadow: 0 0 0 1px #404040;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: var(--border-thick);
+    border-radius: var(--radius);
+    padding: 36px;
+    margin-bottom: 32px;
+    transition: all 0.35s var(--ease-out);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.08);
 }
 
 .card:hover {
-    border-color: var(--cyan);
-    box-shadow: 0 0 0 1px var(--cyan), 8px 8px 0 0 rgba(0, 217, 255, 0.2);
-    transform: translate(-4px, -4px);
+    border-color: var(--cyan-glow);
+    box-shadow: 0 16px 64px rgba(0, 217, 255, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.12);
+    transform: translateY(-6px);
 }
 
 .card-header {
@@ -945,16 +954,20 @@ body {
 }
 
 .stat-card {
-    background: #000000;
-    border: 2px solid #FFFFFF;
-    padding: 32px;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: var(--border-medium);
+    border-radius: var(--radius);
+    padding: 28px;
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 18px;
     position: relative;
     overflow: hidden;
-    transition: all 0.25s var(--ease-out);
-    animation: slideIn 0.4s var(--ease-out) both;
+    transition: all 0.35s var(--ease-out);
+    animation: fadeUp 0.5s var(--ease-out) both;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28), inset 0 1px 1px rgba(255, 255, 255, 0.06);
 }
 
 .stat-card:nth-child(1) { animation-delay: 0.05s; }
@@ -962,21 +975,10 @@ body {
 .stat-card:nth-child(3) { animation-delay: 0.15s; }
 .stat-card:nth-child(4) { animation-delay: 0.2s; }
 
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
 .stat-card:hover {
-    border-color: var(--cyan);
-    transform: translateY(-6px) skewX(-1deg);
-    box-shadow: 6px 6px 0 0 var(--cyan);
+    border-color: var(--cyan-glow);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 48px rgba(0, 217, 255, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.1);
 }
 
 .stat-card::after {
@@ -1130,20 +1132,22 @@ body {
 .btn {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     font-family: var(--font-sans);
-    font-weight: 700;
-    border: 2px solid #FFFFFF;
+    font-weight: 600;
+    border: 1.5px solid rgba(255, 255, 255, 0.25);
     cursor: pointer;
-    transition: all 0.2s var(--ease-out);
-    font-size: 0.9rem;
-    padding: 12px 24px;
+    transition: all 0.3s var(--ease-out);
+    font-size: 0.88rem;
+    padding: 11px 22px;
     position: relative;
     overflow: hidden;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    background: #000000;
-    color: #FFFFFF;
+    background: rgba(30, 37, 53, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .btn-ghost {
@@ -1159,24 +1163,26 @@ body {
 }
 
 .btn-primary {
-    background: var(--cyan);
-    color: #000000;
-    border: 2px solid var(--cyan);
-    font-weight: 800;
+    background: linear-gradient(135deg, var(--cyan), #0099DD);
+    color: #030810;
+    border: 1.5px solid var(--cyan);
+    font-weight: 700;
+    box-shadow: 0 6px 24px rgba(0, 217, 255, 0.3), 0 0 0 1px rgba(0, 217, 255, 0.2);
 }
 
 .btn-primary:hover {
-    transform: translate(-3px, -3px);
-    box-shadow: 3px 3px 0 var(--cyan), 6px 6px 0 rgba(0, 217, 255, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 36px rgba(0, 217, 255, 0.4), 0 0 0 1px rgba(0, 217, 255, 0.3);
+    border-color: #00EBFF;
 }
 
 .btn-primary:active {
-    transform: translate(0, 0);
-    box-shadow: none;
+    transform: translateY(0);
+    box-shadow: 0 4px 16px rgba(0, 217, 255, 0.25);
 }
 
 .btn-primary:disabled {
-    opacity: 0.4;
+    opacity: 0.5;
     cursor: not-allowed;
     transform: none;
 }
@@ -1453,36 +1459,44 @@ tbody tr:hover {
 .signal-badge {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 18px;
-    font-size: 0.8rem;
-    font-weight: 800;
-    letter-spacing: 1px;
-    transition: all 0.2s var(--ease-out);
+    gap: 6px;
+    padding: 7px 15px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    transition: all 0.3s var(--ease-out);
     text-transform: uppercase;
-    border: 2px solid;
+    border: 1.5px solid;
+    border-radius: 6px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
 .signal-badge.long {
-    background: var(--green);
-    color: #000000;
-    border-color: var(--green);
+    background: rgba(0, 240, 135, 0.15);
+    color: var(--green);
+    border-color: rgba(0, 240, 135, 0.35);
 }
 
 .signal-badge.long:hover {
-    transform: translate(-4px, -4px);
-    box-shadow: 4px 4px 0 var(--green);
+    background: rgba(0, 240, 135, 0.22);
+    border-color: var(--green);
+    box-shadow: 0 6px 24px rgba(0, 240, 135, 0.25);
+    transform: translateY(-3px);
 }
 
 .signal-badge.short {
-    background: var(--red);
-    color: #FFFFFF;
-    border-color: var(--red);
+    background: rgba(255, 59, 102, 0.15);
+    color: var(--red);
+    border-color: rgba(255, 59, 102, 0.35);
 }
 
 .signal-badge.short:hover {
-    transform: translate(-4px, -4px);
-    box-shadow: 4px 4px 0 var(--red);
+    background: rgba(255, 59, 102, 0.22);
+    border-color: var(--red);
+    box-shadow: 0 6px 24px rgba(255, 59, 102, 0.25);
+    transform: translateY(-3px);
 }
 
 .status-badge {
