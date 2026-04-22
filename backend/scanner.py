@@ -3058,17 +3058,27 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
 
                 # ── BLAST SCANNER LOGIC ──
                 if run_blast and len(df) >= 20:
-                    signal, volume_ratio, _ = await loop.run_in_executor(
+                    # Volume Label Configuration
+                    vol_label_config = {
+                        'enable': True,
+                        'sma_len': 20,
+                        'threshold': 2.0,  # Show label when volume >= 2x SMA
+                        'color': '#00FF88',  # Green for positive volume surge
+                        'size': 'Small'
+                    }
+
+                    signal, volume_ratio, label_meta = await loop.run_in_executor(
                         executor,
                         lambda tf=tf: apply_blast_scanner(
                             df.copy(),
                             tf_input=tf,
-                            volume_multiplier=blast_volume_multiplier
+                            volume_multiplier=blast_volume_multiplier,
+                            vol_label_config=vol_label_config
                         )
                     )
                     if signal:
                         if not (enable_cpr_narrow_filter and not cpr_narrow):
-                            results_list.append({
+                            result_record = {
                                 'Crypto Name': symbol,
                                 'Timeperiod': tf,
                                 'Signal': signal,
@@ -3079,19 +3089,35 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                 'CPR Category': cpr_category,
                                 'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
                                 'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
-                            })
+                            }
+                            # Optionally add label metadata if present
+                            if label_meta:
+                                result_record['Volume Label'] = label_meta.get('text')
+                                result_record['Label Multiplier'] = label_meta.get('multiplier')
+                            results_list.append(result_record)
 
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
 
-def apply_blast_scanner(df, tf_input='15min', volume_multiplier=5.0):
+def apply_blast_scanner(df, tf_input='15min', volume_multiplier=5.0, vol_label_config=None):
     """
-    BLAST Scanner — Volume Surge Detection (volume-only).
+    BLAST Scanner — Volume Surge Detection with Label Metadata.
+
+    ═══════════════════════════════════════════════════════════════════════════════
+    SECTION 18: VOLUME MULTIPLIER LABEL
+    Displays Volume / SMA(Volume, Len) when it exceeds a configurable threshold.
+    ═══════════════════════════════════════════════════════════════════════════════
 
     Single condition: current candle volume >= volume_multiplier × SMA(20) of
     volume. Direction is derived from the candle body (close > open → LONG,
     close < open → SHORT). `volume_multiplier` is user-configurable via the
     frontend input (default 5.0).
+
+    Returns:
+        tuple: (signal, volume_ratio, label_metadata)
+        - signal: 'LONG', 'SHORT', or None
+        - volume_ratio: current_volume / sma(volume, 20)
+        - label_metadata: dict with label info for charting
     """
     if len(df) < 20 or 'volume' not in df.columns:
         return None, None, None
@@ -3104,13 +3130,46 @@ def apply_blast_scanner(df, tf_input='15min', volume_multiplier=5.0):
     if threshold < 1.0:
         threshold = 1.0
 
-    vol_avg_20 = df['volume'].rolling(window=20, min_periods=1).mean()
+    # Volume Multiplier Label Configuration (defaults match Pine Script)
+    if vol_label_config is None:
+        vol_label_config = {
+            'enable': True,
+            'sma_len': 20,
+            'threshold': 5.0,
+            'color': '#00FF88',  # Green
+            'size': 'Small'
+        }
+
+    # Calculate Volume Multiplier
+    vol_sma_len = vol_label_config.get('sma_len', 20)
+    vol_avg = df['volume'].rolling(window=vol_sma_len, min_periods=1).mean()
     current_volume = df['volume'].iloc[-1]
-    avg_volume = vol_avg_20.iloc[-1]
+    avg_volume = vol_avg.iloc[-1]
     volume_ratio = current_volume / (avg_volume + 1e-8) if avg_volume > 0 else 1.0
 
+    # Determine if we should show the label
+    label_threshold = vol_label_config.get('threshold', 5.0)
+    label_enabled = vol_label_config.get('enable', True)
+    show_label = label_enabled and volume_ratio >= label_threshold
+
+    # Build label metadata for charting
+    label_metadata = None
+    if show_label:
+        vol_mult_rounded = round(volume_ratio * 10) / 10
+        label_metadata = {
+            'text': f"Vol x{vol_mult_rounded}",
+            'color': vol_label_config.get('color', '#00FF88'),
+            'size': vol_label_config.get('size', 'Small'),
+            'position': 'abovebar',
+            'multiplier': vol_mult_rounded,
+            'raw_ratio': volume_ratio,
+            'sma_volume': round(avg_volume, 2),
+            'current_volume': int(current_volume)
+        }
+
+    # Check threshold for signal generation
     if volume_ratio < threshold:
-        return None, None, None
+        return None, None, label_metadata
 
     open_val = df['open'].iloc[-1]
     close_val = df['close'].iloc[-1]
@@ -3121,7 +3180,7 @@ def apply_blast_scanner(df, tf_input='15min', volume_multiplier=5.0):
     else:
         signal = None
 
-    return signal, volume_ratio, None
+    return signal, volume_ratio, label_metadata
 
 async def run_scan(indices, timeframes, log_file, **kwargs):
     """
