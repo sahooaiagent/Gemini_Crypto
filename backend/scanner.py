@@ -2617,6 +2617,9 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
     alma_fixed_vwma_length = kwargs.get('alma_fixed_vwma_length', 21)
     alma_fixed_tema_length = kwargs.get('alma_fixed_tema_length', 10)
 
+    # BLAST scanner — volume surge threshold (user-configurable)
+    blast_volume_multiplier = kwargs.get('blast_volume_multiplier', 5.0)
+
     # Support for multiple scanner types (list) or single scanner type (string)
     if isinstance(scanner_type, list):
         # List of specific scanners requested
@@ -2634,6 +2637,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_conflict_short = 'conflict_short' in scanner_type or 'all' in scanner_type
         run_hilega_ob = 'hilega_ob' in scanner_type or 'all' in scanner_type
         run_hilega_os = 'hilega_os' in scanner_type or 'all' in scanner_type
+        run_blast = 'blast' in scanner_type or 'all' in scanner_type
     else:
         # Single scanner type (original logic)
         run_ama = scanner_type in ('ama_pro', 'all')
@@ -2650,6 +2654,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
         run_conflict_short = scanner_type in ('conflict_short', 'all')
         run_hilega_ob = scanner_type in ('hilega_ob', 'all')
         run_hilega_os = scanner_type in ('hilega_os', 'all')
+        run_blast = scanner_type in ('blast', 'all')
 
     async with semaphore:
         for tf in timeframes:
@@ -2715,6 +2720,12 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
 
 
                 # ── Helper to append a result row ──
+                # Calculate volume ratio for this candle
+                vol_avg_20 = df['volume'].rolling(window=20, min_periods=1).mean()
+                current_volume = df['volume'].iloc[-1]
+                avg_volume = vol_avg_20.iloc[-1]
+                volume_ratio = current_volume / (avg_volume + 1e-8) if avg_volume > 0 else 1.0
+
                 def add_result(sig, angle_val, tg_val, scanner_label, rsi_val=None, open_val=None, close_val=None, sig_type=None, ma_type_used=None, candle_ts=None):
                     # CPR narrow filter gate
                     if enable_cpr_narrow_filter and not cpr_narrow:
@@ -2734,6 +2745,7 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                         'Crypto Name': symbol,
                         'Timeperiod': tf,
                         'Signal': sig,
+                        'Volume': f"{volume_ratio:.2f}x",
                         'Angle': f"{angle_val:.2f}°" if angle_val is not None else "N/A",
                         'TEMA Gap': f"{tg_val:+.3f}%" if tg_val is not None else "N/A",
                         'RSI': f"{rsi_val:.2f}" if rsi_val is not None else "N/A",
@@ -3044,8 +3056,72 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                     'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
                                 })
 
+                # ── BLAST SCANNER LOGIC ──
+                if run_blast and len(df) >= 20:
+                    signal, volume_ratio, _ = await loop.run_in_executor(
+                        executor,
+                        lambda tf=tf: apply_blast_scanner(
+                            df.copy(),
+                            tf_input=tf,
+                            volume_multiplier=blast_volume_multiplier
+                        )
+                    )
+                    if signal:
+                        if not (enable_cpr_narrow_filter and not cpr_narrow):
+                            results_list.append({
+                                'Crypto Name': symbol,
+                                'Timeperiod': tf,
+                                'Signal': signal,
+                                'Volume': f"{volume_ratio:.2f}x" if volume_ratio is not None else "N/A",
+                                'Daily Change': daily_change,
+                                'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                'Scanner': 'BLAST',
+                                'CPR Category': cpr_category,
+                                'CPR Width %': f"{cpr_width_pct:.4f}" if cpr_width_pct is not None else "N/A",
+                                'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
+                            })
+
             except Exception as e:
                 logging.error(f"Error scanning {symbol} on {tf}: {str(e)}")
+
+def apply_blast_scanner(df, tf_input='15min', volume_multiplier=5.0):
+    """
+    BLAST Scanner — Volume Surge Detection (volume-only).
+
+    Single condition: current candle volume >= volume_multiplier × SMA(20) of
+    volume. Direction is derived from the candle body (close > open → LONG,
+    close < open → SHORT). `volume_multiplier` is user-configurable via the
+    frontend input (default 5.0).
+    """
+    if len(df) < 20 or 'volume' not in df.columns:
+        return None, None, None
+
+    # Safety clamp: never accept nonsensical thresholds
+    try:
+        threshold = float(volume_multiplier)
+    except (TypeError, ValueError):
+        threshold = 5.0
+    if threshold < 1.0:
+        threshold = 1.0
+
+    vol_avg_20 = df['volume'].rolling(window=20, min_periods=1).mean()
+    current_volume = df['volume'].iloc[-1]
+    avg_volume = vol_avg_20.iloc[-1]
+    volume_ratio = current_volume / (avg_volume + 1e-8) if avg_volume > 0 else 1.0
+
+    if volume_ratio < threshold:
+        return None, None, None
+
+    open_val = df['open'].iloc[-1]
+    close_val = df['close'].iloc[-1]
+    if close_val > open_val:
+        signal = 'LONG'
+    elif close_val < open_val:
+        signal = 'SHORT'
+    else:
+        signal = None
+
+    return signal, volume_ratio, None
 
 async def run_scan(indices, timeframes, log_file, **kwargs):
     """

@@ -53,6 +53,7 @@ latest_scan = {
     "conflict_results": [],
     "gap_results": [],
     "ob_os_results": [],
+    "blast_results": [],
     "scan_time": None,
     "duration": None
 }
@@ -63,7 +64,7 @@ class ScanRequest(BaseModel):
     adaptation_speed: Optional[str] = "Medium"
     min_bars_between: Optional[int] = 3
     crypto_count: Optional[int] = 20
-    scanner_type: Optional[Union[str, List[str]]] = "ama_pro"  # Single: 'ama_pro', 'qwen', 'hilega_buy', 'hilega_sell', 'ob_os', etc. OR Multiple: list of scanner types
+    scanner_type: Optional[Union[str, List[str]]] = "ama_pro"  # Single: 'ama_pro', 'qwen', 'hilega_buy', 'hilega_sell', 'blast', etc. OR Multiple: list of scanner types
     ma_type: Optional[str] = "ALMA"  # Moving Average Type: 'ALMA', 'JMA', 'T3', 'McGinley', 'KAMA'
     auto_ma_type: Optional[bool] = True  # Auto-select MA type based on asset+timeframe (overrides ma_type)
     enable_regime_filter: Optional[bool] = True  # Advanced Filter: Regime Detection
@@ -82,6 +83,8 @@ class ScanRequest(BaseModel):
     enable_htf_rsi_filter: Optional[bool] = False
     # CPR Narrow Filter — only show signals where CPR is Extreme Narrow or Narrow
     enable_cpr_narrow_filter: Optional[bool] = False
+    # BLAST scanner — user-configurable volume surge threshold (default 5.0x SMA20)
+    blast_volume_multiplier: Optional[float] = 5.0
 
 # ══════════════════════════════════════════════════════════════════
 # ALERT SYSTEM
@@ -109,6 +112,12 @@ class AlertConfig(BaseModel):
     enable_volume_filter_cross: bool = False
     enable_htf_rsi_filter: bool = False
     enable_cpr_narrow_filter: bool = False
+    hilega_buy_rsi: int = 10
+    hilega_sell_rsi: int = 90
+    hilega_rsi_mode: str = "ALMA Fixed"
+    alma_fixed_rsi_length: int = 11
+    alma_fixed_vwma_length: int = 21
+    alma_fixed_tema_length: int = 10
 
 # In-memory stores — state is never persisted (tasks die with the process)
 alert_configs: Dict[str, AlertConfig] = {}
@@ -264,6 +273,12 @@ async def _alert_worker(alert_id: str):
                     enable_regime_filter=config.enable_regime_filter,
                     enable_volume_filter=config.enable_volume_filter,
                     enable_angle_filter=config.enable_angle_filter,
+                    hilega_buy_rsi=config.hilega_buy_rsi,
+                    hilega_sell_rsi=config.hilega_sell_rsi,
+                    hilega_rsi_mode=config.hilega_rsi_mode,
+                    alma_fixed_rsi_length=config.alma_fixed_rsi_length,
+                    alma_fixed_vwma_length=config.alma_fixed_vwma_length,
+                    alma_fixed_tema_length=config.alma_fixed_tema_length,
                     enable_tema_filter=config.enable_tema_filter,
                     enable_vwap_filter=config.enable_vwap_filter,
                     enable_volume_filter_cross=config.enable_volume_filter_cross,
@@ -385,22 +400,26 @@ async def trigger_scan(request: ScanRequest):
             enable_volume_filter_cross=request.enable_volume_filter_cross,
             enable_htf_rsi_filter=request.enable_htf_rsi_filter,
             enable_cpr_narrow_filter=request.enable_cpr_narrow_filter,
+            blast_volume_multiplier=request.blast_volume_multiplier,
         )
         
         duration = round(time.time() - start_time, 2)
         scan_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Separate HILEGA, Cross, Conflict, Gap, OB/OS, and AMA/Qwen results
+        # Separate HILEGA, Cross, Conflict, Gap, OB/OS, BLAST, and AMA/Qwen results
         hilega_results = []
         cross_results = []
         conflict_results = []
         gap_results = []
         ob_os_results = []
+        blast_results = []
         ama_qwen_results = []
 
         for result in results:
             scanner_label = result.get('Scanner', '')
-            if scanner_label in ('HILEGA OB', 'HILEGA OS'):
+            if scanner_label == 'BLAST':
+                blast_results.append(result)
+            elif scanner_label in ('HILEGA OB', 'HILEGA OS'):
                 ob_os_results.append(result)
             elif 'HILEGA' in scanner_label:
                 hilega_results.append(result)
@@ -420,10 +439,11 @@ async def trigger_scan(request: ScanRequest):
         latest_scan["conflict_results"] = conflict_results
         latest_scan["gap_results"] = gap_results
         latest_scan["ob_os_results"] = ob_os_results
+        latest_scan["blast_results"] = blast_results
         latest_scan["scan_time"] = scan_time
         latest_scan["duration"] = duration
 
-        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen, {len(conflict_results)} Conflict, {len(hilega_results)} HILEGA, {len(cross_results)} Cross, {len(gap_results)} Gap, {len(ob_os_results)} OB/OS signal(s).")
+        logging.info(f"Scan completed successfully in {duration}s. Found {len(ama_qwen_results)} AMA/Qwen, {len(conflict_results)} Conflict, {len(hilega_results)} HILEGA, {len(cross_results)} Cross, {len(gap_results)} Gap, {len(ob_os_results)} OB/OS, {len(blast_results)} BLAST signal(s).")
         return {
             "status": "success",
             "data": ama_qwen_results,
@@ -432,6 +452,7 @@ async def trigger_scan(request: ScanRequest):
             "conflict_data": conflict_results,
             "gap_data": gap_results,
             "ob_os_data": ob_os_results,
+            "blast_data": blast_results,
             "scan_time": scan_time,
             "duration": duration
         }
@@ -449,6 +470,7 @@ async def get_results():
         "conflict_results": latest_scan["conflict_results"],
         "gap_results": latest_scan["gap_results"],
         "ob_os_results": latest_scan["ob_os_results"],
+        "blast_results": latest_scan["blast_results"],
         "scan_time": latest_scan["scan_time"],
         "duration": latest_scan["duration"]
     }

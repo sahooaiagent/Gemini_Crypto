@@ -8,6 +8,7 @@ let allHilegaResults = [];
 let allCrossResults = [];
 let allConflictResults = [];
 let allObOsResults = [];
+let allBlastResults = [];
 let scanRunning = false;
 let lastScanConfig = null;
 let logPollInterval = null;
@@ -1207,6 +1208,7 @@ async function fetchResults() {
         allCrossResults = data.cross_results || [];
         allConflictResults = data.conflict_results || [];
         allObOsResults = data.ob_os_results || [];
+        allBlastResults = data.blast_results || [];
         if (data.scan_time) {
             updateLastScanTime(data.scan_time);
         }
@@ -1215,11 +1217,13 @@ async function fetchResults() {
         populateCrossTfFilter();
         populateConflictTfFilter();
         populateObOsTfFilter();
+        populateBlastTfFilter();
         renderResults();
         renderHilegaResults();
         renderCrossResults();
         renderConflictResults();
         renderObOsResults();
+        renderBlastResults();
         updateStats();
     } catch (e) {
         // API may not have /api/results yet
@@ -1296,7 +1300,7 @@ function renderResults() {
 
     // Sort
     if (currentSort.col) {
-        const numericCols = ['Angle', 'TEMA Gap', 'RSI', 'Daily Change'];
+        const numericCols = ['Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Volume'];
         const isNumeric = numericCols.includes(currentSort.col);
         filtered.sort((a, b) => {
             let va = a[currentSort.col] || '';
@@ -1375,6 +1379,7 @@ function renderResults() {
                         ${r.Signal}
                     </span>
                 </td>
+                <td class="mono">${r.Volume || '—'}</td>
                 <td class="mono">${r.Angle || '—'}</td>
                 <td class="mono">${r['TEMA Gap'] || '—'}</td>
                 <td class="mono">${rsiStr}</td>
@@ -1409,7 +1414,7 @@ function renderHilegaResults() {
 
     // Sort
     if (currentHilegaSort.col) {
-        const numericCols = ['Angle', 'RSI-TEMA', 'RSI', 'VWMA', 'Daily Change'];
+        const numericCols = ['Angle', 'RSI-TEMA', 'RSI', 'VWMA', 'Daily Change', 'Volume'];
         const isNumeric = numericCols.includes(currentHilegaSort.col);
         filtered.sort((a, b) => {
             let va = a[currentHilegaSort.col] || '';
@@ -1461,6 +1466,7 @@ function renderHilegaResults() {
                         ${r.Signal}
                     </span>
                 </td>
+                <td class="mono">${r.Volume || '—'}</td>
                 <td class="mono">${angleStr}</td>
                 <td class="mono">${rsiTemaStr}</td>
                 <td class="mono">${rsiStr}</td>
@@ -1510,7 +1516,7 @@ function renderCrossResults() {
 
     // Sort
     if (currentCrossSort.col) {
-        const numericCols = ['Angle', 'RSI Diff', 'RSI-VWMA', 'RSI-ALMA', 'RSI', 'VWMA', 'ALMA', 'Daily Change'];
+        const numericCols = ['Angle', 'RSI Diff', 'RSI-VWMA', 'RSI-ALMA', 'RSI', 'VWMA', 'ALMA', 'Daily Change', 'Volume'];
         const isNumeric = numericCols.includes(currentCrossSort.col);
         filtered.sort((a, b) => {
             let va = a[currentCrossSort.col] || '';
@@ -1569,6 +1575,7 @@ function renderCrossResults() {
                         ${signalType}
                     </span>
                 </td>
+                <td class="mono">${r.Volume || '—'}</td>
                 <td class="${candleCls}"><strong>${candleBadge} ${candleStatus}</strong></td>
                 <td class="mono">${angleStr}</td>
                 <td class="mono">${rsiDiffStr}</td>
@@ -1621,7 +1628,7 @@ function renderObOsResults() {
 
     // Sort
     if (currentObOsSort.col) {
-        const numericCols = ['HTF RSI', 'HTF TEMA', 'ALMA RSI', 'ALMA TEMA', 'Daily Change'];
+        const numericCols = ['HTF RSI', 'HTF TEMA', 'ALMA RSI', 'ALMA TEMA', 'Daily Change', 'Volume'];
         const isNumeric = numericCols.includes(currentObOsSort.col);
         filtered.sort((a, b) => {
             let va = a[currentObOsSort.col] || '';
@@ -1680,6 +1687,7 @@ function renderObOsResults() {
                         ${r.Signal}
                     </span>
                 </td>
+                <td class="mono">${r.Volume || '—'}</td>
                 <td class="mono">${htfRsi}</td>
                 <td class="mono">${htfTema}</td>
                 <td class="mono ${almaRsiCls}">${almaRsi}</td>
@@ -1719,7 +1727,7 @@ function renderConflictResults() {
 
     // Sort
     if (currentConflictSort.col) {
-        const numericCols = ['Angle', 'TEMA Gap', 'RSI', 'Daily Change'];
+        const numericCols = ['Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Volume'];
         const isNumeric = numericCols.includes(currentConflictSort.col);
         filtered.sort((a, b) => {
             let va = a[currentConflictSort.col] || '';
@@ -1786,6 +1794,7 @@ function renderConflictResults() {
                         ${r.Signal}
                     </span>
                 </td>
+                <td class="mono">${r.Volume || '—'}</td>
                 <td class="mono">${r.Angle || '—'}</td>
                 <td class="mono">${r['TEMA Gap'] || '—'}</td>
                 <td class="mono">${r.RSI || '—'}</td>
@@ -1892,6 +1901,24 @@ function initScannerControls() {
     applyAutoMaState();  // apply on load
     autoMaToggle.addEventListener('change', applyAutoMaState);
 
+    // BLAST Volume Surge Ratio — load persisted value and wire live persistence + header label
+    const blastVolInput = $('#blastVolumeMultiplier');
+    if (blastVolInput) {
+        try {
+            const stored = localStorage.getItem('blast_volume_multiplier');
+            if (stored !== null && !isNaN(parseFloat(stored))) {
+                blastVolInput.value = parseFloat(stored);
+            }
+        } catch (e) {}
+        updateBlastThresholdLabel(parseFloat(blastVolInput.value) || 5.0);
+        blastVolInput.addEventListener('change', () => {
+            let v = parseFloat(blastVolInput.value);
+            if (isNaN(v) || v < 1.0) { v = 1.0; blastVolInput.value = v; }
+            try { localStorage.setItem('blast_volume_multiplier', String(v)); } catch (e) {}
+            updateBlastThresholdLabel(v);
+        });
+    }
+
     // Index chip toggles
     $$('.index-chip').forEach(chip => {
         chip.addEventListener('click', () => chip.classList.toggle('active'));
@@ -1975,15 +2002,6 @@ function initScannerControls() {
         runScan(lastScanConfig);
     });
 
-    // Export CSV
-    $('#exportCsvBtn').addEventListener('click', exportCSV);
-
-    // Export Hilega CSV
-    $('#exportHilegaCsvBtn').addEventListener('click', exportHilegaCSV);
-
-    // Export OB/OS CSV
-    $('#exportObOsCsvBtn').addEventListener('click', exportObOsCSV);
-
     // Clear logs
     const clearLogHTML = `
             <div class="log-line system">
@@ -2066,6 +2084,7 @@ async function runScan(overrideConfig = null) {
         enable_cpr_narrow_filter,
         hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
         alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+        blast_volume_multiplier,
         scanner_type, scannerLabel;
 
     if (overrideConfig) {
@@ -2077,6 +2096,7 @@ async function runScan(overrideConfig = null) {
            enable_cpr_narrow_filter,
            hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
            alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+           blast_volume_multiplier,
            scanner_type, scannerLabel } = overrideConfig);
         console.log('[runScan] Rescan config — timeframes:', timeframes, '| scanner_type:', scanner_type, '| crypto_count:', crypto_count);
     } else {
@@ -2111,6 +2131,11 @@ async function runScan(overrideConfig = null) {
         alma_fixed_vwma_length = parseInt($('#almaFixedVwmaLength').value) || 21;
         alma_fixed_tema_length = parseInt($('#almaFixedTemaLength').value) || 10;
 
+        // Get BLAST Volume Surge Ratio (user-configurable, persisted in localStorage)
+        blast_volume_multiplier = parseFloat($('#blastVolumeMultiplier')?.value) || 5.0;
+        if (blast_volume_multiplier < 1.0) blast_volume_multiplier = 1.0;
+        try { localStorage.setItem('blast_volume_multiplier', String(blast_volume_multiplier)); } catch (e) {}
+
         // Check if ALL button is active
         const isAllActive = $('#allScannersBtn').classList.contains('active');
 
@@ -2141,7 +2166,7 @@ async function runScan(overrideConfig = null) {
         }
 
         // Build scanner label for logging
-        const scannerLabelsMap = { 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'rsi_cross_up_vwma': 'RSI Cross UP VWMA', 'rsi_cross_dn_vwma': 'RSI Cross DN VWMA', 'rsi_cross_up_alma': 'RSI Cross UP ALMA', 'rsi_cross_dn_alma': 'RSI Cross DN ALMA', 'hilega_ob': 'HILEGA OB', 'hilega_os': 'HILEGA OS' };
+        const scannerLabelsMap = { 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'rsi_cross_up_vwma': 'RSI Cross UP VWMA', 'rsi_cross_dn_vwma': 'RSI Cross DN VWMA', 'rsi_cross_up_alma': 'RSI Cross UP ALMA', 'rsi_cross_dn_alma': 'RSI Cross DN ALMA', 'hilega_ob': 'HILEGA OB', 'hilega_os': 'HILEGA OS', 'blast': 'BLAST' };
         scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabelsMap[s] || s).join(' + ') : (scannerLabelsMap[selectedScanners[0]] || selectedScanners[0]));
 
         // Save config for future rescans
@@ -2152,6 +2177,7 @@ async function runScan(overrideConfig = null) {
             enable_cpr_narrow_filter,
             hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
             alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+            blast_volume_multiplier,
             scanner_type, scannerLabel
         };
         console.log('[runScan] Config saved to lastScanConfig:', lastScanConfig);
@@ -2214,7 +2240,8 @@ async function runScan(overrideConfig = null) {
                 hilega_rsi_mode,
                 alma_fixed_rsi_length,
                 alma_fixed_vwma_length,
-                alma_fixed_tema_length
+                alma_fixed_tema_length,
+                blast_volume_multiplier
             })
         });
 
@@ -2228,8 +2255,11 @@ async function runScan(overrideConfig = null) {
         allCrossResults = data.cross_data || [];
         allConflictResults = data.conflict_data || [];
         allObOsResults = data.ob_os_data || [];
+        allBlastResults = data.blast_data || [];
+        // Sync BLAST header threshold label with the value that was actually scanned
+        if (typeof blast_volume_multiplier === 'number') updateBlastThresholdLabel(blast_volume_multiplier);
 
-        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length + allObOsResults.length;
+        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length + allObOsResults.length + allBlastResults.length;
 
         updateProgress(100, 'Scan complete!');
         const parts = [];
@@ -2238,6 +2268,7 @@ async function runScan(overrideConfig = null) {
         if (allHilegaResults.length > 0) parts.push(`${allHilegaResults.length} HILEGA`);
         if (allCrossResults.length > 0) parts.push(`${allCrossResults.length} Cross`);
         if (allObOsResults.length > 0) parts.push(`${allObOsResults.length} OB/OS`);
+        if (allBlastResults.length > 0) parts.push(`${allBlastResults.length} BLAST`);
         addLogLine('success', `✅ SCAN COMPLETED — ${parts.length ? parts.join(' · ') : '0'} signal(s) found`);
 
         populateTfFilter();
@@ -2245,11 +2276,13 @@ async function runScan(overrideConfig = null) {
         populateCrossTfFilter();
         populateConflictTfFilter();
         populateObOsTfFilter();
+        populateBlastTfFilter();
         renderResults();
         renderHilegaResults();
         renderCrossResults();
         renderConflictResults();
         renderObOsResults();
+        renderBlastResults();
         updateStats();
         updateLastScanTime(new Date().toISOString());
         fetchTradeSetups();   // refresh live setups after every scan
@@ -2586,95 +2619,6 @@ function initMobileMenu() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// EXPORT CSV
-// ══════════════════════════════════════════════════════════════
-function exportCSV() {
-    if (allResults.length === 0) {
-        showToast('No data to export', 'warning');
-        return;
-    }
-    const hasScanner = allResults.some(r => r.Scanner);
-    const hasSignalType = allResults.some(r => r['Signal Type']);
-    const headers = hasScanner
-        ? ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Scanner', 'Timestamp', 'Candle', 'Signal Type']
-        : ['Index', 'Timeframe', 'Signal', 'Angle', 'TEMA Gap', 'RSI', 'Daily Change', 'Timestamp', 'Candle', 'Signal Type'];
-    const rows = allResults.map(r => {
-        const base = [r['Crypto Name'], r.Timeperiod, r.Signal, r.Angle, r['TEMA Gap'], r.RSI || 'N/A', r['Daily Change']];
-        if (hasScanner) base.push(r.Scanner || '');
-        base.push(r.Timestamp);
-        const candleValue = r.Color === 'GREEN' ? 'Bullish' : r.Color === 'RED' ? 'Bearish' : r.Color === 'NEUTRAL' ? 'Neutral' : 'N/A';
-        base.push(candleValue);
-        base.push(r['Signal Type'] || 'CROSSOVER');
-        return base;
-    });
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `gemini_scan_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('CSV exported', 'success');
-}
-
-function exportObOsCSV() {
-    if (allObOsResults.length === 0) {
-        showToast('No OB/OS data to export', 'warning');
-        return;
-    }
-    const headers = ['Asset', 'Timeframe', 'Signal', 'HTF RSI', 'HTF TEMA', 'ALMA RSI', 'ALMA TEMA', 'Daily Change', 'Timestamp', 'CPR Category'];
-    const rows = allObOsResults.map(r => [
-        r['Crypto Name'],
-        r.Timeperiod,
-        r.Signal,
-        r['HTF RSI'] || '',
-        r['HTF TEMA'] || '',
-        r['ALMA RSI'] || '',
-        r['ALMA TEMA'] || '',
-        r['Daily Change'] || '',
-        r.Timestamp,
-        r['CPR Category'] || ''
-    ]);
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `gemini_obos_scan_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('OB/OS CSV exported', 'success');
-}
-
-function exportHilegaCSV() {
-    if (allHilegaResults.length === 0) {
-        showToast('No Hilega data to export', 'warning');
-        return;
-    }
-    const headers = ['Asset', 'Timeframe', 'Signal', 'Angle', 'RSI-TEMA', 'RSI', 'VWMA', 'Daily Change', 'Timestamp'];
-    const rows = allHilegaResults.map(r => {
-        return [
-            r['Crypto Name'],
-            r.Timeperiod,
-            r.Signal,
-            r.Angle || '',
-            r['RSI-TEMA'] || '',
-            r.RSI || '',
-            r.VWMA || '',
-            r['Daily Change'] || '',
-            r.Timestamp
-        ];
-    });
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `gemini_hilega_scan_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Hilega CSV exported', 'success');
-}
-
-// ══════════════════════════════════════════════════════════════
 // CONNECTION STATUS
 // ══════════════════════════════════════════════════════════════
 function setConnectionStatus(online) {
@@ -2879,18 +2823,6 @@ function renderJournal() {
 
 function initJournal() {
     $('#journalSearchInput').addEventListener('input', renderJournal);
-
-    $('#exportJournalBtn').addEventListener('click', () => {
-        const entries = loadJournal();
-        if (!entries.length) { showToast('No entries to export', 'warning'); return; }
-        const headers = ['Date','Symbol','Signal','Timeframe','Entry','SL','T1','T2','Result','P/L%','Notes'];
-        const rows = entries.map(e => [e.date,e.symbol,e.signal,e.timeframe,e.entry,e.sl,e.tp1,e.tp2,e.result,e.pnl,`"${(e.notes||'').replace(/"/g,'""')}"`]);
-        const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-        const a = document.createElement('a');
-        a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-        a.download = `trade_journal_${new Date().toISOString().slice(0,10)}.csv`;
-        a.click();
-    });
 
     $('#clearJournalBtn').addEventListener('click', () => {
         if (!confirm('Delete ALL journal entries? This cannot be undone.')) return;
@@ -3306,3 +3238,131 @@ function initAlerts() {
         if (e.target === $('#alertModal')) closeAlertModal();
     });
 }
+
+// ════════════════════════════════════════════════════════════════════
+// BLAST SCANNER FUNCTIONS
+// ════════════════════════════════════════════════════════════════════
+
+function populateBlastTfFilter() {
+    const select = $('#blastTfFilter');
+    const currentVal = select.value;
+    const tfMap = { '1min': '1m', '2min': '2m', '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '1 week': '1W' };
+    const tfs = [...new Set(allBlastResults.map(r => r.Timeperiod))];
+    select.innerHTML = '<option value="all">All Timeframes</option>' +
+        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
+    select.value = tfs.includes(currentVal) ? currentVal : 'all';
+}
+
+let currentBlastSort = { col: null, asc: true };
+
+// Update the "— threshold: Xx" suffix in the BLAST results header
+function updateBlastThresholdLabel(multiplier) {
+    const label = document.getElementById('blastThresholdLabel');
+    if (!label) return;
+    const v = (typeof multiplier === 'number' && !isNaN(multiplier)) ? multiplier : 5.0;
+    label.textContent = `— threshold: ${v.toFixed(1)}x`;
+}
+
+function renderBlastResults() {
+    const body = $('#blastSignalsBody');
+    const empty = $('#blastEmptyState');
+    const countEl = $('#blastResultCount');
+    const searchVal = ($('#blastSearchInput').value || '').toLowerCase();
+    const signalFilter = $('#blastSignalFilterChips .chip.active')?.dataset?.filter || 'all';
+    const tfFilter = $('#blastTfFilter').value;
+
+    let filtered = allBlastResults.filter(r => {
+        if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
+        if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
+        if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
+        return true;
+    });
+
+    // Sort
+    if (currentBlastSort.col) {
+        const numericCols = ['Volume', 'Daily Change'];
+        const isNumeric = numericCols.includes(currentBlastSort.col);
+        filtered.sort((a, b) => {
+            let va = a[currentBlastSort.col] || '';
+            let vb = b[currentBlastSort.col] || '';
+            if (isNumeric) {
+                va = parseFloat(String(va).replace(/[°%x,+-]/g, '')) || 0;
+                vb = parseFloat(String(vb).replace(/[°%x,+-]/g, '')) || 0;
+            } else {
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+            }
+            if (va < vb) return currentBlastSort.asc ? -1 : 1;
+            if (va > vb) return currentBlastSort.asc ? 1 : -1;
+            return 0;
+        });
+    }
+
+    if (filtered.length === 0) {
+        body.innerHTML = '';
+        empty.style.display = 'block';
+        countEl.textContent = '0 results';
+        return;
+    }
+
+    empty.style.display = 'none';
+    countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
+
+    const tfMap = { '1min': '1m', '2min': '2m', '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '1 week': '1W' };
+
+    body.innerHTML = filtered.map((r, i) => {
+        const isLong = r.Signal === 'LONG';
+        const sigColor = isLong ? '#00FF00' : '#FF0000';
+        const sigIcon = isLong ? 'fa-arrow-up' : 'fa-arrow-down';
+        const sigTitle = isLong ? 'Volume Surge + RSI Oversold Bounce' : 'Volume Surge + RSI Overbought Breakdown';
+        const changeStr = r['Daily Change'] || '—';
+        const changeVal = parseFloat(changeStr);
+        const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
+        const name = r['Crypto Name'] || '—';
+        const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
+        const volumeStr = r.Volume || '—';
+
+        // Highlight strong signals (volume >= 6x)
+        const volVal = parseFloat(volumeStr);
+        const isStrong = !isNaN(volVal) && volVal >= 6;
+        const strongCls = isStrong ? 'blast-strong' : '';
+
+        return `
+            <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
+                <td><strong>${name}</strong></td>
+                <td><span class="tf-badge">${tfDisplay}</span></td>
+                <td>
+                    <span class="signal-badge" style="background:${sigColor}20;color:${sigColor};border:1px solid ${sigColor}40" title="${sigTitle}">
+                        <i class="fas ${sigIcon}"></i>
+                        ${r.Signal}
+                    </span>
+                </td>
+                <td class="mono ${strongCls}">${volumeStr}</td>
+                <td class="${changeCls}">${changeStr}</td>
+                <td class="mono">${r.Timestamp || '—'}</td>
+                <td>${getCprBadge(r['CPR Category'])}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Add BLAST filter event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    $('#blastSearchInput')?.addEventListener('input', renderBlastResults);
+    $('#blastSignalFilterChips')?.addEventListener('click', (e) => {
+        if (e.target.classList.contains('chip')) {
+            $('#blastSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
+            e.target.classList.add('active');
+            renderBlastResults();
+        }
+    });
+    $('#blastTfFilter')?.addEventListener('change', renderBlastResults);
+    $('#blastSignalsTable')?.addEventListener('click', (e) => {
+        const header = e.target.closest('th.sortable');
+        if (!header) return;
+        const col = header.dataset.col;
+        if (currentBlastSort.col === col) currentBlastSort.asc = !currentBlastSort.asc;
+        else { currentBlastSort.col = col; currentBlastSort.asc = true; }
+        renderBlastResults();
+    });
+});

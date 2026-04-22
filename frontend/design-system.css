@@ -995,19 +995,20 @@ textarea:focus,
 
 /* ───────────── TOP BAR ───────────── */
 .gs-topbar {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    padding: 0 var(--space-6) !important;
-    gap: var(--space-4) !important;
-    height: var(--topbar-h) !important;
-    position: sticky !important;
-    top: var(--ticker-h) !important;
-    z-index: 50 !important;
-    border-bottom: 1px solid var(--glass-border) !important;
-    background: var(--glass-bg) !important;
-    backdrop-filter: var(--glass-blur) !important;
-    -webkit-backdrop-filter: var(--glass-blur) !important;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    gap: 16px;
+    height: 52px;
+    position: sticky;
+    top: 38px;
+    z-index: 50;
+    border-bottom: 1px solid rgba(0, 229, 255, 0.15);
+    background: rgba(11, 17, 32, 0.85);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .gs-topbar__left,
