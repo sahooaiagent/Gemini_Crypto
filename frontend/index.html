@@ -315,18 +315,49 @@
                     <table id="conflictSignalsTable">
                         <thead>
                             <tr>
-                                <th>Asset</th>
-                                <th>Timeframe</th>
-                                <th>Signal</th>
-                                <th>Angle</th>
-                                <th>TEMA Gap</th>
-                                <th>RSI</th>
-                                <th>Daily Chg</th>
-                                <th>Conflict State</th>
+                                <th class="sortable" data-col="name">
+                                    <span>Asset</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="timeframe">
+                                    <span>Timeframe</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="signal">
+                                    <span>Signal</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="volume">
+                                    <span>Volume</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="angle">
+                                    <span>Angle</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="temagap">
+                                    <span>TEMA Gap</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="rsi">
+                                    <span>RSI</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="change">
+                                    <span>Daily Chg</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
+                                <th class="sortable" data-col="scanner">
+                                    <span>Conflict State</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                                 <th>MA Type</th>
                                 <th>Timestamp</th>
                                 <th>Candle</th>
-                                <th>CPR</th>
+                                <th class="sortable" data-col="cprcategory">
+                                    <span>CPR</span>
+                                    <i class="fas fa-sort sort-icon"></i>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="conflictSignalsBody">

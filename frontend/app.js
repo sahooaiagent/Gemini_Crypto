@@ -2413,6 +2413,7 @@ function initFilterControls() {
                 name: 'Crypto Name',
                 timeframe: 'Timeperiod',
                 signal: 'Signal',
+                volume: 'Volume',
                 angle: 'Angle',
                 temagap: 'TEMA Gap',
                 rsi: 'RSI',
@@ -2465,6 +2466,7 @@ function initFilterControls() {
                 name: 'Crypto Name',
                 timeframe: 'Timeperiod',
                 signal: 'Signal',
+                volume: 'Volume',
                 angle: 'Angle',
                 rsitema: 'RSI-TEMA',
                 rsi: 'RSI',
@@ -2517,6 +2519,7 @@ function initFilterControls() {
                 name: 'Crypto Name',
                 timeframe: 'Timeperiod',
                 signal: 'Signal Type',
+                volume: 'Volume',
                 candle: 'Candle Status',
                 angle: 'Angle',
                 rsidiff: 'RSI Diff',
@@ -2563,6 +2566,29 @@ function initFilterControls() {
     // Conflict timeframe filter
     $('#conflictTfFilter').addEventListener('change', renderConflictResults);
 
+    // Conflict column sorting
+    const conflictColMap = {
+        'name': 'Crypto Name', 'timeframe': 'Timeperiod', 'signal': 'Signal',
+        'volume': 'Volume', 'angle': 'Angle', 'temagap': 'TEMA Gap', 'rsi': 'RSI',
+        'change': 'Daily Change', 'scanner': 'Scanner', 'cprcategory': 'CPR Category'
+    };
+    $$('#conflictSignalsTable th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = conflictColMap[th.dataset.col];
+            if (currentConflictSort.col === col) {
+                currentConflictSort.asc = !currentConflictSort.asc;
+            } else {
+                currentConflictSort.col = col;
+                currentConflictSort.asc = true;
+            }
+            $$('#conflictSignalsTable th.sortable').forEach(t => {
+                t.classList.remove('sorted-asc', 'sorted-desc');
+            });
+            th.classList.add(currentConflictSort.asc ? 'sorted-asc' : 'sorted-desc');
+            renderConflictResults();
+        });
+    });
+
     // OB/OS signal filter chips
     $$('#obOsSignalFilterChips .chip').forEach(chip => {
         chip.addEventListener('click', () => {
@@ -2585,6 +2611,7 @@ function initFilterControls() {
     // OB/OS column sorting
     const obOsColMap = {
         'name': 'Crypto Name', 'timeframe': 'Timeperiod', 'signal': 'Signal',
+        'volume': 'Volume',
         'htfrsi': 'HTF RSI', 'htftema': 'HTF TEMA', 'almarsi': 'ALMA RSI',
         'almatema': 'ALMA TEMA', 'change': 'Daily Change', 'cprcategory': 'CPR Category'
     };
