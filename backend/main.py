@@ -1182,6 +1182,8 @@ async def save_performance_tracker(data: PerformanceTrackerData):
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.isdir(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+    # Also serve frontend files at root so index.html can load assets without prefix
+    app.mount("/", StaticFiles(directory=frontend_dir), name="frontend")
 
 @app.on_event("shutdown")
 async def shutdown_event():

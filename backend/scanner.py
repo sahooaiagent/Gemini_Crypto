@@ -2235,31 +2235,31 @@ def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None, tf_input='1
 
     return signal, angle, rsi_tema_gap, current_true_rsi, current_vwma
 
-def apply_ob_os_scanner(df, tf_input='15min', ob_threshold=88.0, os_threshold=12.0,
-                        fixed_rsi_length=11, fixed_tema_length=10,
-                        htf_ob_threshold=80.0, htf_os_threshold=20.0,
-                        require_htf=True):
+def apply_ob_os_scanner(df, tf_input='15min', ob_threshold=90.0, os_threshold=9.0,
+                        fixed_rsi_length=15, fixed_tema_length=10,
+                        htf_ob_threshold=91.0, htf_os_threshold=9.0,
+                        require_htf=False):
     """
     HILEGA OB/OS Scanner — Section 14: HILEGA RSI Extreme Reversal Detection
 
     Matches Pine Script (Section 14) exactly:
 
       Current TF:
-        hilega_rsi      = TrueRSI(close, hilega_rsiLen=11)       ← fixed length
+        hilega_rsi      = TrueRSI(close, hilega_rsiLen=15)       ← fixed length
 
-      Higher TF mapping (step-function, same as HILEGA HTF ALMA):
-        hilega_higherTFMinutes:  <=5→15, <=15→60, <=30→240,
-                                 <=60→1440, <=240→10080, <=2880→43200, else→129600
+      Higher TF mapping (step-function, Qwen Mobile Pine Script):
+        hilega_higherTFMinutes:  <=5→60, <=15→240, <=30→1440,
+                                 <=60→4320, <=240→10080, <=2880→43200, else→525600
 
-      Adaptive HTF RSI (same close series, longer adaptive length):
-        hilega_adaptive_rsi_len = clamp(round(9 + log10(higherTFMinutes+1) * 7), 7, 35)
+      Adaptive HTF RSI (same close series, adaptMult=0.6):
+        hilega_adaptive_rsi_len = clamp(round(9 + log10(higherTFMinutes+1) * 7 * 0.6), 7, 35)
         hilega_htf_rsi          = TrueRSI(close, hilega_adaptive_rsi_len)
 
       Conditions:
-        hilega_ob_base   = current_rsi >= ob_threshold          (default 88.0)
-        hilega_os_base   = current_rsi <= os_threshold          (default 12.0)
-        hilega_htf_ob    = htf_rsi    >= htf_ob_threshold       (default 80.0)
-        hilega_htf_os    = htf_rsi    <= htf_os_threshold       (default 20.0)
+        hilega_ob_base   = current_rsi >= ob_threshold          (default 90.0)
+        hilega_os_base   = current_rsi <= os_threshold          (default 9.0)
+        hilega_htf_ob    = htf_rsi    >= htf_ob_threshold       (default 91.0)
+        hilega_htf_os    = htf_rsi    <= htf_os_threshold       (default 9.0)
         hilega_extremeOB = ob_base AND (not require_htf OR htf_ob)
         hilega_extremeOS = os_base AND (not require_htf OR htf_os)
 
@@ -2268,13 +2268,13 @@ def apply_ob_os_scanner(df, tf_input='15min', ob_threshold=88.0, os_threshold=12
     Parameters:
     - df:               DataFrame with OHLCV data
     - tf_input:         Timeframe string (e.g. '15min', '1hr', '1 day')
-    - ob_threshold:     Current TF overbought level (default 88.0)
-    - os_threshold:     Current TF oversold level  (default 12.0)
-    - fixed_rsi_length: TrueRSI period for current TF (default 11)
+    - ob_threshold:     Current TF overbought level (default 90.0)
+    - os_threshold:     Current TF oversold level  (default 9.0)
+    - fixed_rsi_length: TrueRSI period for current TF (default 15, matches hilega_rsiLen)
     - fixed_tema_length:TEMA period for display columns (default 10)
-    - htf_ob_threshold: HTF overbought confirmation level (default 80.0)
-    - htf_os_threshold: HTF oversold confirmation level  (default 20.0)
-    - require_htf:      If True, HTF must also be extreme (default True)
+    - htf_ob_threshold: HTF overbought confirmation level (default 91.0)
+    - htf_os_threshold: HTF oversold confirmation level  (default 9.0)
+    - require_htf:      If True, HTF must also be extreme (default False, matches Pine Script)
 
     Returns:
     - state:      'OB', 'OS', or None
@@ -2312,19 +2312,19 @@ def apply_ob_os_scanner(df, tf_input='15min', ob_threshold=88.0, os_threshold=12
     current_alma_rsi  = alma_rsi_series.iloc[-1]
     current_alma_tema = alma_tema_series.iloc[-1]
 
-    # ── Higher TF step-function (Pine Script: hilega_higherTFMinutes) ────────
-    if   tf_minutes <= 5:    higher_tf_minutes = 15
-    elif tf_minutes <= 15:   higher_tf_minutes = 60
-    elif tf_minutes <= 30:   higher_tf_minutes = 240
-    elif tf_minutes <= 60:   higher_tf_minutes = 1440
-    elif tf_minutes <= 240:  higher_tf_minutes = 10080
-    elif tf_minutes <= 2880: higher_tf_minutes = 43200
-    else:                    higher_tf_minutes = 129600
+    # ── Higher TF step-function (Qwen Mobile Pine Script: hilega_higherTFMinutes) ─
+    if   tf_minutes <= 5:     higher_tf_minutes = 60      # 1H
+    elif tf_minutes <= 15:    higher_tf_minutes = 240     # 4H
+    elif tf_minutes <= 30:    higher_tf_minutes = 1440    # 1D
+    elif tf_minutes <= 60:    higher_tf_minutes = 4320    # 3D
+    elif tf_minutes <= 240:   higher_tf_minutes = 10080   # 1W
+    elif tf_minutes <= 2880:  higher_tf_minutes = 43200   # 1M
+    elif tf_minutes <= 10080: higher_tf_minutes = 525600  # ~1Y
+    else:                     higher_tf_minutes = 525600
 
-    # ── Adaptive HTF RSI length (Pine Script: hilega_adaptive_rsi_len) ───────
-    # hilega_adaptMult = 1.0 (Medium sensitivity, fixed in Pine Script)
+    # ── Adaptive HTF RSI length (Pine Script: hilega_adaptMult = 0.6) ────────
     htf_rsi_len = int(np.clip(
-        np.round(9 + np.log10(higher_tf_minutes + 1) * 7 * 1.0), 7, 35
+        np.round(9 + np.log10(higher_tf_minutes + 1) * 7 * 0.6), 7, 35
     ))
 
     # ── HTF TrueRSI: same close series, adaptive length ───────────────────────
@@ -2334,14 +2334,14 @@ def apply_ob_os_scanner(df, tf_input='15min', ob_threshold=88.0, os_threshold=12
     current_htf_rsi  = htf_rsi_series.iloc[-1]
     current_htf_tema = htf_tema_series.iloc[-1]
 
-    # HTF display label (mirrors Pine Script hilega_htfDisplay)
-    if   higher_tf_minutes >= 129600: htf_display = "3 Months"
+    # HTF display label
+    if   higher_tf_minutes >= 525600: htf_display = "~1 Year"
     elif higher_tf_minutes >=  43200: htf_display = "1 Month"
     elif higher_tf_minutes >=  10080: htf_display = "1 Week"
+    elif higher_tf_minutes >=   4320: htf_display = "3 Days"
     elif higher_tf_minutes >=   1440: htf_display = "1 Day"
     elif higher_tf_minutes >=    240: htf_display = "4 Hour"
     elif higher_tf_minutes >=     60: htf_display = "1 Hour"
-    elif higher_tf_minutes >=     15: htf_display = "15 Min"
     else:                             htf_display = "Current"
 
     # ── Base conditions ───────────────────────────────────────────────────────
