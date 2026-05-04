@@ -2235,58 +2235,39 @@ def apply_hilega_scanner(df, scanner_mode='buy', rsi_threshold=None, tf_input='1
 
     return signal, angle, rsi_tema_gap, current_true_rsi, current_vwma
 
-def apply_ob_os_scanner(df, tf_input='15min', ob_threshold=90.0, os_threshold=9.0,
-                        fixed_rsi_length=15, fixed_tema_length=10,
-                        htf_ob_threshold=91.0, htf_os_threshold=9.0,
-                        require_htf=False):
+def apply_ob_os_scanner(df, tf_input='15min', **kwargs):
     """
-    HILEGA OB/OS Scanner — Section 14: HILEGA RSI Extreme Reversal Detection
+    HILEGA OB/OS Scanner — HILEGA HTF-ALMA Crossover Signals (Qwen Mobile Section 17)
 
-    Matches Pine Script (Section 14) exactly:
+    Matches Pine Script lines 898-918 exactly:
 
-      Current TF:
-        hilega_rsi      = TrueRSI(close, hilega_rsiLen=15)       ← fixed length
+      Higher TF mapping (Qwen Mobile hilega_higherTFMinutes):
+        <=5→60, <=15→240, <=30→1440, <=60→4320, <=240→10080, <=2880→43200, <=10080→525600
 
-      Higher TF mapping (step-function, Qwen Mobile Pine Script):
-        hilega_higherTFMinutes:  <=5→60, <=15→240, <=30→1440,
-                                 <=60→4320, <=240→10080, <=2880→43200, else→525600
+      Parameters (adaptMult = 1.0, Medium sensitivity):
+        _htf_rsi_len  = clamp(round(9 + log10(higherTFMinutes+1) * 7  * 1.0), 7, 35)
+        _htf_alma_len = clamp(round(8 + log10(higherTFMinutes+1) * 6  * 1.0), 6, 100)
+        _htf_rsx      = TrueRSI(close, _htf_rsi_len)          ← ALMA-smoothed (sigma=5)
+        _htf_alma     = ALMA(_htf_rsx, _htf_alma_len, 0.85, 6.0)
 
-      Adaptive HTF RSI (same close series, adaptMult=0.6):
-        hilega_adaptive_rsi_len = clamp(round(9 + log10(higherTFMinutes+1) * 7 * 0.6), 7, 35)
-        hilega_htf_rsi          = TrueRSI(close, hilega_adaptive_rsi_len)
+      Signal conditions:
+        HILEGA OB = crossunder(_htf_rsx, _htf_alma) AND (rsx - alma < -1) AND bearish candle
+        HILEGA OS = crossover(_htf_rsx,  _htf_alma) AND (rsx - alma >  1) AND bullish candle
 
-      Conditions:
-        hilega_ob_base   = current_rsi >= ob_threshold          (default 90.0)
-        hilega_os_base   = current_rsi <= os_threshold          (default 9.0)
-        hilega_htf_ob    = htf_rsi    >= htf_ob_threshold       (default 91.0)
-        hilega_htf_os    = htf_rsi    <= htf_os_threshold       (default 9.0)
-        hilega_extremeOB = ob_base AND (not require_htf OR htf_ob)
-        hilega_extremeOS = os_base AND (not require_htf OR htf_os)
-
-    Valid TF: up to 4320 minutes (3 days), matching Pine Script hilega_validTF.
-
-    Parameters:
-    - df:               DataFrame with OHLCV data
-    - tf_input:         Timeframe string (e.g. '15min', '1hr', '1 day')
-    - ob_threshold:     Current TF overbought level (default 90.0)
-    - os_threshold:     Current TF oversold level  (default 9.0)
-    - fixed_rsi_length: TrueRSI period for current TF (default 15, matches hilega_rsiLen)
-    - fixed_tema_length:TEMA period for display columns (default 10)
-    - htf_ob_threshold: HTF overbought confirmation level (default 91.0)
-    - htf_os_threshold: HTF oversold confirmation level  (default 9.0)
-    - require_htf:      If True, HTF must also be extreme (default False, matches Pine Script)
+      Valid TF: hilega_validTF = tfMins <= 4320
 
     Returns:
-    - state:      'OB', 'OS', or None
-    - alma_rsi:   Current TF TrueRSI value
-    - alma_tema:  TEMA of current TF TrueRSI (for display)
-    - htf_rsi:    HTF adaptive TrueRSI value (adaptive length, same close series)
-    - htf_tema:   TEMA of HTF TrueRSI (for display)
+    - state:     'OB', 'OS', or None
+    - rsx_val:   Current _htf_rsx (TrueRSI) value
+    - alma_val:  Current _htf_alma value
+    - diff_val:  rsx - alma difference
+    - candle_status: 'Confirmed' or 'Forming'
     """
     if len(df) < 100:
         return None, None, None, None, None
 
-    close = df['close']
+    close  = df['close']
+    open_  = df['open']
 
     # ── Parse current TF to minutes ──────────────────────────────────────────
     tf_clean = tf_input.lower().strip()
@@ -2303,16 +2284,12 @@ def apply_ob_os_scanner(df, tf_input='15min', ob_threshold=90.0, os_threshold=9.
     elif 'month' in tf_clean: tf_minutes = 43200
     else: tf_minutes = 15
 
-    # ── Valid TF check (Pine Script: hilega_validTF = tfMins <= 4320) ────────
-    valid_tf = tf_minutes <= 4320
+    # ── Valid TF gate (Pine Script: hilega_validTF = tfMins <= 4320) ─────────
+    if tf_minutes > 4320:
+        logging.info(f"  OB/OS Scanner | TF={tf_input} ({tf_minutes}min) > 4320 — skipped (validTF=False)")
+        return None, None, None, None, None
 
-    # ── Current TF TrueRSI (fixed length = hilega_rsiLen, default 11) ────────
-    alma_rsi_series  = calculate_true_rsi_alma(close, length=fixed_rsi_length)
-    alma_tema_series = calculate_tema_of_series(alma_rsi_series, length=fixed_tema_length)
-    current_alma_rsi  = alma_rsi_series.iloc[-1]
-    current_alma_tema = alma_tema_series.iloc[-1]
-
-    # ── Higher TF step-function (Qwen Mobile Pine Script: hilega_higherTFMinutes) ─
+    # ── Higher TF step-function (Qwen Mobile Pine Script line 895) ───────────
     if   tf_minutes <= 5:     higher_tf_minutes = 60      # 1H
     elif tf_minutes <= 15:    higher_tf_minutes = 240     # 4H
     elif tf_minutes <= 30:    higher_tf_minutes = 1440    # 1D
@@ -2322,55 +2299,85 @@ def apply_ob_os_scanner(df, tf_input='15min', ob_threshold=90.0, os_threshold=9.
     elif tf_minutes <= 10080: higher_tf_minutes = 525600  # ~1Y
     else:                     higher_tf_minutes = 525600
 
-    # ── Adaptive HTF RSI length (Pine Script: hilega_adaptMult = 0.6) ────────
-    htf_rsi_len = int(np.clip(
-        np.round(9 + np.log10(higher_tf_minutes + 1) * 7 * 0.6), 7, 35
-    ))
-
-    # ── HTF TrueRSI: same close series, adaptive length ───────────────────────
-    # Matches Pine Script: hilega_htf_rsi = TrueRSI(close, hilega_adaptive_rsi_len)
-    htf_rsi_series  = calculate_true_rsi_alma(close, length=htf_rsi_len)
-    htf_tema_series = calculate_tema_of_series(htf_rsi_series, length=fixed_tema_length)
-    current_htf_rsi  = htf_rsi_series.iloc[-1]
-    current_htf_tema = htf_tema_series.iloc[-1]
-
-    # HTF display label
+    # ── HTF display label ────────────────────────────────────────────────────
     if   higher_tf_minutes >= 525600: htf_display = "~1 Year"
     elif higher_tf_minutes >=  43200: htf_display = "1 Month"
     elif higher_tf_minutes >=  10080: htf_display = "1 Week"
     elif higher_tf_minutes >=   4320: htf_display = "3 Days"
     elif higher_tf_minutes >=   1440: htf_display = "1 Day"
     elif higher_tf_minutes >=    240: htf_display = "4 Hour"
-    elif higher_tf_minutes >=     60: htf_display = "1 Hour"
-    else:                             htf_display = "Current"
+    else:                             htf_display = "1 Hour"
 
-    # ── Base conditions ───────────────────────────────────────────────────────
-    ob_base = valid_tf and (not pd.isna(current_alma_rsi)) and (current_alma_rsi >= ob_threshold)
-    os_base = valid_tf and (not pd.isna(current_alma_rsi)) and (current_alma_rsi <= os_threshold)
+    # ── Adaptive lengths (adaptMult = 1.0, Medium — Pine Script line 905) ────
+    adapt_mult  = 1.0
+    rsi_len  = int(np.clip(np.round(9 + np.log10(higher_tf_minutes + 1) * 7 * adapt_mult),  7,  35))
+    alma_len = int(np.clip(np.round(8 + np.log10(higher_tf_minutes + 1) * 6 * adapt_mult),  6, 100))
 
-    # ── HTF confirmation conditions ───────────────────────────────────────────
-    htf_ob = (not pd.isna(current_htf_rsi)) and (current_htf_rsi >= htf_ob_threshold)
-    htf_os = (not pd.isna(current_htf_rsi)) and (current_htf_rsi <= htf_os_threshold)
+    # ── _htf_rsx = TrueRSI(close, rsi_len) — ALMA sigma=5 ───────────────────
+    rsx_series  = calculate_true_rsi_alma(close, length=rsi_len)
 
-    # ── Final extreme conditions ──────────────────────────────────────────────
-    extreme_ob = ob_base and (not require_htf or htf_ob)
-    extreme_os = os_base and (not require_htf or htf_os)
+    # ── _htf_alma = ta.alma(rsx, alma_len, 0.85, 6.0) ────────────────────────
+    alma_series = calculate_alma(rsx_series, length=alma_len, offset=0.85, sigma=6.0)
+
+    if len(rsx_series) < 3 or len(alma_series) < 3:
+        return None, None, None, None, None
+
+    # ── Crossover detection — confirmed candle (iloc[-2]) first ──────────────
+    #    confirmed bar:  rsx[-2] vs rsx[-3], alma[-2] vs alma[-3]
+    #    forming bar:    rsx[-1] vs rsx[-2], alma[-1] vs alma[-2]
+
+    state         = None
+    candle_status = None
+    rsx_val       = None
+    alma_val      = None
+    diff_val      = None
+
+    for idx, label in [(-2, 'Confirmed'), (-1, 'Forming')]:
+        prev_idx = idx - 1
+        rsx_curr  = rsx_series.iloc[idx]
+        rsx_prev  = rsx_series.iloc[prev_idx]
+        alma_curr = alma_series.iloc[idx]
+        alma_prev = alma_series.iloc[prev_idx]
+
+        if pd.isna(rsx_curr) or pd.isna(rsx_prev) or pd.isna(alma_curr) or pd.isna(alma_prev):
+            continue
+
+        diff = rsx_curr - alma_curr
+        is_bullish = close.iloc[idx] > open_.iloc[idx]
+        is_bearish = close.iloc[idx] < open_.iloc[idx]
+
+        # Pine Script crossover:  rsx crosses OVER  alma  (rsx was below, now above)
+        cross_up   = (rsx_curr > alma_curr) and (rsx_prev <= alma_prev)
+        # Pine Script crossunder: rsx crosses UNDER alma  (rsx was above, now below)
+        cross_down = (rsx_curr < alma_curr) and (rsx_prev >= alma_prev)
+
+        # hilega_alma_buy  → HILEGA OS (oversold reversal — buy)
+        if cross_up and diff > 1 and is_bullish:
+            state         = 'OS'
+            candle_status = label
+            rsx_val       = rsx_curr
+            alma_val      = alma_curr
+            diff_val      = diff
+            break
+
+        # hilega_alma_sell → HILEGA OB (overbought reversal — sell)
+        if cross_down and diff < -1 and is_bearish:
+            state         = 'OB'
+            candle_status = label
+            rsx_val       = rsx_curr
+            alma_val      = alma_curr
+            diff_val      = diff
+            break
 
     logging.info(
-        f"  OB/OS Scanner | TF={tf_input} ({tf_minutes}min) validTF={valid_tf} | "
-        f"HTF={htf_display} ({higher_tf_minutes}min, RSI len={htf_rsi_len}) | "
-        f"RSI={current_alma_rsi:.2f} (OB>={ob_threshold} OS<={os_threshold}) | "
-        f"HTF RSI={current_htf_rsi:.2f} (OB>={htf_ob_threshold} OS<={htf_os_threshold}) | "
-        f"extremeOB={extreme_ob} extremeOS={extreme_os}"
+        f"  OB/OS Scanner | TF={tf_input} ({tf_minutes}min) | "
+        f"HTF={htf_display} ({higher_tf_minutes}min) | "
+        f"RSI len={rsi_len} ALMA len={alma_len} | "
+        f"rsx={rsx_series.iloc[-2]:.2f} alma={alma_series.iloc[-2]:.2f} diff={rsx_series.iloc[-2]-alma_series.iloc[-2]:.2f} | "
+        f"state={state} ({candle_status})"
     )
 
-    state = None
-    if extreme_ob:
-        state = 'OB'
-    elif extreme_os:
-        state = 'OS'
-
-    return state, current_alma_rsi, current_alma_tema, current_htf_rsi, current_htf_tema
+    return state, rsx_val, alma_val, diff_val, candle_status
 
 
 def apply_qwen_scanner(df, tf_input="1 day", use_current_candle=False, **kwargs):
@@ -3033,10 +3040,10 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                     'CPR Pivot': f"{cpr_pivot:.4f}" if cpr_pivot is not None else "N/A",
                                 })
 
-                # ── OB/OS SCANNER LOGIC (Section 18: HILEGA RSI Extreme Reversal) ──
+                # ── OB/OS SCANNER LOGIC (HILEGA HTF-ALMA Crossover) ──────────────
                 if run_hilega_ob or run_hilega_os:
                     if len(df) >= 100:
-                        state, alma_rsi, alma_tema, htf_rsi, htf_tema = await loop.run_in_executor(
+                        state, rsx_val, alma_val, diff_val, ob_candle_status = await loop.run_in_executor(
                             executor,
                             lambda tf=tf: apply_ob_os_scanner(
                                 df.copy(),
@@ -3051,10 +3058,10 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                                     'Timeperiod': tf,
                                     'Signal': state,
                                     'Volume': f"{volume_ratio:.2f}x",
-                                    'HTF RSI': f"{htf_rsi:.2f}" if htf_rsi is not None and not pd.isna(htf_rsi) else "N/A",
-                                    'HTF TEMA': f"{htf_tema:.2f}" if htf_tema is not None and not pd.isna(htf_tema) else "N/A",
-                                    'ALMA RSI': f"{alma_rsi:.2f}" if alma_rsi is not None and not pd.isna(alma_rsi) else "N/A",
-                                    'ALMA TEMA': f"{alma_tema:.2f}" if alma_tema is not None and not pd.isna(alma_tema) else "N/A",
+                                    'HTF RSI': f"{rsx_val:.2f}" if rsx_val is not None and not pd.isna(rsx_val) else "N/A",
+                                    'HTF TEMA': f"{alma_val:.2f}" if alma_val is not None and not pd.isna(alma_val) else "N/A",
+                                    'ALMA RSI': f"{diff_val:.2f}" if diff_val is not None and not pd.isna(diff_val) else "N/A",
+                                    'ALMA TEMA': ob_candle_status if ob_candle_status else "N/A",
                                     'Daily Change': daily_change,
                                     'Timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                     'Scanner': f'HILEGA {state}',
