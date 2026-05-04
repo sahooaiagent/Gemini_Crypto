@@ -488,8 +488,13 @@ async def get_top_binance_symbols(limit=100):
             response = await client.get(cg_url, timeout=10.0)
             cg_data = response.json()
             
-        top_names = [coin['symbol'].upper() for coin in cg_data]
-        
+        # Exclude stablecoins — user does not trade these
+        EXCLUDED_SYMBOLS = {'USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'FDUSD', 'USDP', 'GUSD', 'FRAX', 'PYUSD'}
+        top_names = [
+            coin['symbol'].upper() for coin in cg_data
+            if coin['symbol'].upper() not in EXCLUDED_SYMBOLS
+        ]
+
         # 3. Get available markets and tickers from Binance
         logging.info("Loading Binance markets and tickers...")
         markets = await exchange.load_markets()
@@ -3213,7 +3218,14 @@ async def run_scan(indices, timeframes, log_file, **kwargs):
     if not top_coins:
         logging.error("No symbols to scan.")
         return []
-    
+
+    # Strip stablecoins — never scan USDC, USDT, BUSD, DAI, etc.
+    EXCLUDED_SYMBOLS = {'USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'FDUSD', 'USDP', 'GUSD', 'FRAX', 'PYUSD'}
+    top_coins = [
+        c for c in top_coins
+        if not any(ex in c['symbol'].upper().replace('/USDT:USDT', '').replace('/USDT', '') for ex in EXCLUDED_SYMBOLS)
+    ]
+
     # Batch the processing of symbols to prevent overwhelming the connection pool
     batch_size = 20
     for i in range(0, len(top_coins), batch_size):
