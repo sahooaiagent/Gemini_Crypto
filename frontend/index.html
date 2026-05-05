@@ -375,94 +375,6 @@
                 </div>
             </div>
 
-            <!-- Hilega Signal Results Table -->
-            <div class="card" id="hilegaSignalsCard">
-                <div class="card-header">
-                    <h2><i class="fas fa-chart-line"></i> HILEGA Signals</h2>
-                </div>
-
-                <!-- Filters -->
-                <div class="filters-bar">
-                    <div class="search-input-wrap">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="hilegaSearchInput" placeholder="Search signals..." autocomplete="off">
-                    </div>
-                    <div class="filter-chips" id="hilegaSignalFilterChips">
-                        <button class="chip active" data-filter="all">All</button>
-                        <button class="chip" data-filter="LONG">
-                            <span class="chip-dot green"></span> Long
-                        </button>
-                        <button class="chip" data-filter="SHORT">
-                            <span class="chip-dot red"></span> Short
-                        </button>
-                    </div>
-                    <select class="filter-dropdown" id="hilegaTfFilter">
-                        <option value="all">All Timeframes</option>
-                    </select>
-                </div>
-
-                <!-- Table -->
-                <div class="table-wrap">
-                    <table id="hilegaSignalsTable">
-                        <thead>
-                            <tr>
-                                <th class="sortable" data-col="name">
-                                    <span>Asset</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="timeframe">
-                                    <span>Timeframe</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="signal">
-                                    <span>Signal</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="volume">
-                                    <span>Volume</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="angle">
-                                    <span>Angle</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="rsitema">
-                                    <span>RSI-TEMA</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="rsi">
-                                    <span>RSI</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="vwma">
-                                    <span>VWMA</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th class="sortable" data-col="change">
-                                    <span>Daily Chg</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                                <th>Timestamp</th>
-                                <th class="sortable" data-col="cprcategory">
-                                    <span>CPR</span>
-                                    <i class="fas fa-sort sort-icon"></i>
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody id="hilegaSignalsBody">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
-                    <div class="empty-state" id="hilegaEmptyState">
-                        <i class="fas fa-satellite-dish"></i>
-                        <p>No Hilega signals detected yet</p>
-                        <span>Run a Hilega scan to detect market signals</span>
-                    </div>
-                </div>
-                <div class="table-footer">
-                    <span id="hilegaResultCount">0 results</span>
-                </div>
-            </div>
 
             <!-- Cross Signal Results Table -->
             <div class="card" id="crossSignalsCard">
@@ -905,8 +817,8 @@
                                     <button class="chip-modern scanner-chip" data-scanner="qwen">Qwen Pre</button>
                                     <button class="chip-modern scanner-chip" data-scanner="ama_pro_now">AMA Pro Now</button>
                                     <button class="chip-modern scanner-chip" data-scanner="qwen_now">Qwen Now</button>
-                                    <button class="chip-modern scanner-chip" data-scanner="hilega_buy">HILEGA BUY</button>
-                                    <button class="chip-modern scanner-chip" data-scanner="hilega_sell">HILEGA SELL</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="hilega_buy">OS</button>
+                                    <button class="chip-modern scanner-chip" data-scanner="hilega_sell">OB</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_up_vwma">RSI Cross UP VWMA</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_dn_vwma">RSI Cross DN VWMA</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_up_alma">RSI Cross UP ALMA</button>
@@ -1004,36 +916,22 @@
                             <div class="section-header-collapse collapsed" data-collapse="hilega-params">
                                 <div class="section-title-wrap">
                                     <i class="fas fa-chart-area section-icon"></i>
-                                    <span class="section-title">HILEGA Parameters</span>
+                                    <span class="section-title">HILEGA Cross Angle</span>
                                 </div>
                                 <i class="fas fa-chevron-down collapse-icon"></i>
                             </div>
                             <div class="section-content collapsed" id="hilega-params">
                                 <div class="params-row-modern">
                                     <div class="param-group-modern">
-                                        <label for="hilegaBuyRsi">HILEGA BUY - True RSI Threshold</label>
-                                        <select id="hilegaBuyRsi" class="select-modern">
-                                            <option value="5">5</option>
-                                            <option value="10" selected>10</option>
-                                            <option value="15">15</option>
-                                            <option value="20">20</option>
-                                            <option value="25">25</option>
-                                            <option value="30">30</option>
-                                        </select>
+                                        <label for="hilegaMinAngle">Min Cross Angle (°)</label>
+                                        <input type="number" id="hilegaMinAngle" class="select-modern" value="1" min="0" max="89" step="1">
                                     </div>
                                     <div class="param-group-modern">
-                                        <label for="hilegaSellRsi">HILEGA SELL - True RSI Threshold</label>
-                                        <select id="hilegaSellRsi" class="select-modern">
-                                            <option value="70">70</option>
-                                            <option value="75">75</option>
-                                            <option value="80">80</option>
-                                            <option value="85">85</option>
-                                            <option value="90" selected>90</option>
-                                            <option value="95">95</option>
-                                        </select>
+                                        <label for="hilegaMaxAngle">Max Cross Angle (°)</label>
+                                        <input type="number" id="hilegaMaxAngle" class="select-modern" value="85" min="1" max="90" step="1">
                                     </div>
                                 </div>
-                                <span class="hint-modern" style="margin-top: 12px;">HILEGA BUY triggers when True RSI ≤ threshold | HILEGA SELL triggers when True RSI ≥ threshold</span>
+                                <span class="hint-modern" style="margin-top: 12px;">Signal fires when the absolute cross angle between RSI and ALMA falls within [Min, Max]. Lower angles = shallow cross, higher angles = steep cross.</span>
                             </div>
                         </div>
 
@@ -1057,37 +955,6 @@
                             </div>
                         </div>
 
-                        <!-- RSI Setup Section (only visible for HILEGA scanners) -->
-                        <div class="config-section full-width" id="hilegaRsiSetupSection" style="display: none;">
-                            <label class="config-label">RSI Setup</label>
-                            <div class="params-row">
-                                <div class="param-group">
-                                    <label for="hilegaRsiMode">HILEGA RSI Mode</label>
-                                    <select id="hilegaRsiMode" class="filter-dropdown">
-                                        <option value="ALMA Fixed" selected>ALMA Fixed</option>
-                                        <option value="ALMA">ALMA (Adaptive)</option>
-                                        <option value="RMA">RMA (Adaptive)</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <!-- ALMA Fixed Length Inputs (only visible when ALMA Fixed is selected) -->
-                            <div class="params-row" id="almaFixedLengthsRow">
-                                <div class="param-group">
-                                    <label for="almaFixedRsiLength">RSI Length</label>
-                                    <input type="number" id="almaFixedRsiLength" class="filter-dropdown" value="11" min="5" max="35">
-                                </div>
-                                <div class="param-group">
-                                    <label for="almaFixedVwmaLength">VWMA Length</label>
-                                    <input type="number" id="almaFixedVwmaLength" class="filter-dropdown" value="21" min="10" max="50">
-                                </div>
-                                <div class="param-group">
-                                    <label for="almaFixedTemaLength">TEMA Length</label>
-                                    <input type="number" id="almaFixedTemaLength" class="filter-dropdown" value="10" min="3" max="100">
-                                </div>
-                            </div>
-                            <p class="config-hint" id="hilegaRsiModeHint">ALMA Fixed: Use ALMA smoothing with custom fixed lengths (defaults: RSI=11, VWMA=21, TEMA=10)</p>
-                        </div>
                     </div>
                 </div>
 
@@ -1529,8 +1396,8 @@
                     <button class="chip" data-value="ama_pro_now">AMA Pro Now</button>
                     <button class="chip" data-value="conflict_long">BC</button>
                     <button class="chip" data-value="conflict_short">SC</button>
-                    <button class="chip" data-value="hilega_buy">HILEGA Buy</button>
-                    <button class="chip" data-value="hilega_sell">HILEGA Sell</button>
+                    <button class="chip" data-value="hilega_buy">HILEGA OS</button>
+                    <button class="chip" data-value="hilega_sell">HILEGA OB</button>
                     <button class="chip" data-value="hilega_ob">OB</button>
                     <button class="chip" data-value="hilega_os">OS</button>
                 </div>

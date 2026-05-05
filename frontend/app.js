@@ -4,7 +4,6 @@
 
 const API_URL = 'http://localhost:8001';
 let allResults = [];
-let allHilegaResults = [];
 let allCrossResults = [];
 let allConflictResults = [];
 let allObOsResults = [];
@@ -13,7 +12,6 @@ let scanRunning = false;
 let lastScanConfig = null;
 let logPollInterval = null;
 let currentSort = { col: null, asc: true };
-let currentHilegaSort = { col: null, asc: true };
 let currentCrossSort = { col: null, asc: true };
 let currentConflictSort = { col: null, asc: true };
 let currentObOsSort = { col: null, asc: true };
@@ -1265,7 +1263,6 @@ async function fetchResults() {
         if (!res.ok) return;
         const data = await res.json();
         allResults = data.results || [];
-        allHilegaResults = data.hilega_results || [];
         allCrossResults = data.cross_results || [];
         allConflictResults = data.conflict_results || [];
         allObOsResults = data.ob_os_results || [];
@@ -1274,13 +1271,11 @@ async function fetchResults() {
             updateLastScanTime(data.scan_time);
         }
         populateTfFilter();
-        populateHilegaTfFilter();
         populateCrossTfFilter();
         populateConflictTfFilter();
         populateObOsTfFilter();
         populateBlastTfFilter();
         renderResults();
-        renderHilegaResults();
         renderCrossResults();
         renderConflictResults();
         renderObOsResults();
@@ -1458,97 +1453,6 @@ function renderResults() {
     }).join('');
 }
 
-function renderHilegaResults() {
-    const body = $('#hilegaSignalsBody');
-    const empty = $('#hilegaEmptyState');
-    const countEl = $('#hilegaResultCount');
-    const searchVal = ($('#hilegaSearchInput').value || '').toLowerCase();
-    const signalFilter = $('#hilegaSignalFilterChips .chip.active')?.dataset?.filter || 'all';
-    const tfFilter = $('#hilegaTfFilter').value;
-
-    let filtered = allHilegaResults.filter(r => {
-        if (searchVal && !r['Crypto Name']?.toLowerCase().includes(searchVal)) return false;
-        if (signalFilter !== 'all' && r.Signal !== signalFilter) return false;
-        if (tfFilter !== 'all' && r.Timeperiod !== tfFilter) return false;
-        return true;
-    });
-
-    // Sort
-    if (currentHilegaSort.col) {
-        const numericCols = ['Angle', 'RSI-TEMA', 'RSI', 'VWMA', 'Daily Change', 'Volume'];
-        const isNumeric = numericCols.includes(currentHilegaSort.col);
-        filtered.sort((a, b) => {
-            let va = a[currentHilegaSort.col] || '';
-            let vb = b[currentHilegaSort.col] || '';
-            if (isNumeric) {
-                va = parseFloat(String(va).replace(/[°%,]/g, '')) || 0;
-                vb = parseFloat(String(vb).replace(/[°%,]/g, '')) || 0;
-            } else {
-                if (typeof va === 'string') va = va.toLowerCase();
-                if (typeof vb === 'string') vb = vb.toLowerCase();
-            }
-            if (va < vb) return currentHilegaSort.asc ? -1 : 1;
-            if (va > vb) return currentHilegaSort.asc ? 1 : -1;
-            return 0;
-        });
-    }
-
-    if (filtered.length === 0) {
-        body.innerHTML = '';
-        empty.style.display = 'block';
-        countEl.textContent = '0 results';
-        return;
-    }
-
-    empty.style.display = 'none';
-    countEl.textContent = `${filtered.length} result${filtered.length !== 1 ? 's' : ''}`;
-
-    body.innerHTML = filtered.map((r, i) => {
-        const sigCls = r.Signal === 'LONG' ? 'long' : 'short';
-        const sigIcon = r.Signal === 'LONG' ? 'fa-arrow-up' : 'fa-arrow-down';
-        const changeStr = r['Daily Change'] || '—';
-        const changeVal = parseFloat(changeStr);
-        const changeCls = isNaN(changeVal) ? '' : (changeVal >= 0 ? 'change-positive' : 'change-negative');
-        const name = r['Crypto Name'] || '—';
-        const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '2 day': '2D', '3 day': '3D', '4 day': '4D', '5 day': '5D', '6 day': '6D', '1 week': '1W', '1 month': '1M' };
-        const tfDisplay = tfMap[r.Timeperiod] || r.Timeperiod;
-        const angleStr = r.Angle || '—';
-        const rsiTemaStr = r['RSI-TEMA'] || '—';
-        const rsiStr = r.RSI || '—';
-        const vwmaStr = r.VWMA || '—';
-
-        return `
-            <tr style="animation: fadeUp 0.3s ${0.03 * i}s var(--ease-out) both">
-                <td><strong>${name}</strong></td>
-                <td><span class="tf-badge">${tfDisplay}</span></td>
-                <td>
-                    <span class="signal-badge ${sigCls}">
-                        <i class="fas ${sigIcon}"></i>
-                        ${r.Signal}
-                    </span>
-                </td>
-                <td class="mono">${r.Volume || '—'}</td>
-                <td class="mono">${angleStr}</td>
-                <td class="mono">${rsiTemaStr}</td>
-                <td class="mono">${rsiStr}</td>
-                <td class="mono">${vwmaStr}</td>
-                <td class="${changeCls}">${changeStr}</td>
-                <td class="mono">${r.Timestamp || '—'}</td>
-                <td>${getCprBadge(r['CPR Category'])}</td>
-            </tr>
-        `;
-    }).join('');
-}
-
-function populateHilegaTfFilter() {
-    const select = $('#hilegaTfFilter');
-    const currentVal = select.value;
-    const tfMap = { '5min': '5m', '10min': '10m', '15min': '15m', '20min': '20m', '25min': '25m', '30min': '30m', '45min': '45m', '1hr': '1h', '2hr': '2h', '4hr': '4h', '6hr': '6h', '8hr': '8h', '12hr': '12h', '1 day': '1D', '1 week': '1W', '1 month': '1M' };
-    const tfs = [...new Set(allHilegaResults.map(r => r.Timeperiod))];
-    select.innerHTML = '<option value="all">All Timeframes</option>' +
-        tfs.map(tf => `<option value="${tf}">${tfMap[tf] || tf}</option>`).join('');
-    select.value = tfs.includes(currentVal) ? currentVal : 'all';
-}
 
 function getCrossScannerBadgeClass(scanner) {
     if (!scanner) return '';
@@ -1901,12 +1805,10 @@ function clearDashboard() {
     }
     // Clear result arrays and tables
     allResults = [];
-    allHilegaResults = [];
     allCrossResults = [];
     allConflictResults = [];
     allObOsResults = [];
     renderResults();
-    renderHilegaResults();
     renderCrossResults();
     renderConflictResults();
     renderObOsResults();
@@ -2011,8 +1913,6 @@ function initScannerControls() {
         });
         // Deactivate ALL button
         $('#allScannersBtn').classList.remove('active');
-        // Update HILEGA RSI Setup visibility after resetting
-        updateHilegaRsiSetupVisibility();
     });
 
     // All Scanners button
@@ -2026,12 +1926,6 @@ function initScannerControls() {
                 chip.classList.remove('active');
             });
         }
-        // Update HILEGA RSI Setup visibility (show if ALL is active since it includes HILEGA)
-        if (allBtn.classList.contains('active')) {
-            $('#hilegaRsiSetupSection').style.display = 'block';
-        } else {
-            updateHilegaRsiSetupVisibility();
-        }
     });
 
     // Update scanner chip click behavior to deactivate ALL button
@@ -2042,16 +1936,6 @@ function initScannerControls() {
             $('#allScannersBtn').classList.remove('active');
         });
     });
-
-    // HILEGA RSI Setup visibility and controls
-    updateHilegaRsiSetupVisibility();
-    $$('.scanner-chip').forEach(chip => {
-        chip.addEventListener('click', updateHilegaRsiSetupVisibility);
-    });
-
-    // HILEGA RSI Mode change handler
-    $('#hilegaRsiMode').addEventListener('change', updateAlmaFixedLengthsVisibility);
-    updateAlmaFixedLengthsVisibility();
 
     // Run scan button
     $('#runScanBtn').addEventListener('click', () => runScan());
@@ -2073,40 +1957,6 @@ function initScannerControls() {
     $('#scannerClearLogsBtn').addEventListener('click', () => {
         $('#scannerLogOutput').innerHTML = clearLogHTML;
     });
-}
-
-// ══════════════════════════════════════════════════════════════
-// HILEGA RSI SETUP VISIBILITY CONTROLS
-// ══════════════════════════════════════════════════════════════
-function updateHilegaRsiSetupVisibility() {
-    const hilegaScanners = ['hilega_buy', 'hilega_sell'];
-    const selectedScanners = Array.from($$('.scanner-chip.active')).map(c => c.dataset.scanner);
-    const hasHilega = selectedScanners.some(s => hilegaScanners.includes(s));
-
-    const setupSection = $('#hilegaRsiSetupSection');
-    if (hasHilega) {
-        setupSection.style.display = 'block';
-    } else {
-        setupSection.style.display = 'none';
-    }
-}
-
-function updateAlmaFixedLengthsVisibility() {
-    const rsiMode = $('#hilegaRsiMode').value;
-    const lengthsRow = $('#almaFixedLengthsRow');
-    const hint = $('#hilegaRsiModeHint');
-
-    if (rsiMode === 'ALMA Fixed') {
-        lengthsRow.style.display = 'flex';
-        hint.textContent = 'ALMA Fixed: Use ALMA smoothing with custom fixed lengths (defaults: RSI=11, VWMA=21, TEMA=10)';
-    } else {
-        lengthsRow.style.display = 'none';
-        if (rsiMode === 'ALMA') {
-            hint.textContent = 'ALMA (Adaptive): Use ALMA smoothing with timeframe-adaptive lengths';
-        } else if (rsiMode === 'RMA') {
-            hint.textContent = 'RMA (Adaptive): Use RMA smoothing with timeframe-adaptive lengths (matches standard RSI)';
-        }
-    }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2143,8 +1993,7 @@ async function runScan(overrideConfig = null) {
         enable_regime_filter, enable_volume_filter, enable_angle_filter,
         enable_tema_filter, enable_vwap_filter, enable_volume_filter_cross, enable_htf_rsi_filter,
         enable_cpr_narrow_filter,
-        hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
-        alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+        hilega_min_angle, hilega_max_angle,
         blast_volume_multiplier,
         scanner_type, scannerLabel;
 
@@ -2155,8 +2004,7 @@ async function runScan(overrideConfig = null) {
            enable_regime_filter, enable_volume_filter, enable_angle_filter,
            enable_tema_filter, enable_vwap_filter, enable_volume_filter_cross, enable_htf_rsi_filter,
            enable_cpr_narrow_filter,
-           hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
-           alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+           hilega_min_angle, hilega_max_angle,
            blast_volume_multiplier,
            scanner_type, scannerLabel } = overrideConfig);
         console.log('[runScan] Rescan config — timeframes:', timeframes, '| scanner_type:', scanner_type, '| crypto_count:', crypto_count);
@@ -2182,15 +2030,9 @@ async function runScan(overrideConfig = null) {
         const enable_htf_rsi_filter = $('#enableHtfRsiFilter')?.checked || false;
         enable_cpr_narrow_filter = $('#enableCprNarrowFilter')?.checked || false;
 
-        // Get HILEGA RSI thresholds
-        hilega_buy_rsi = parseInt($('#hilegaBuyRsi').value) || 10;
-        hilega_sell_rsi = parseInt($('#hilegaSellRsi').value) || 90;
-
-        // Get HILEGA RSI Mode and parameters
-        hilega_rsi_mode = $('#hilegaRsiMode').value;
-        alma_fixed_rsi_length = parseInt($('#almaFixedRsiLength').value) || 11;
-        alma_fixed_vwma_length = parseInt($('#almaFixedVwmaLength').value) || 21;
-        alma_fixed_tema_length = parseInt($('#almaFixedTemaLength').value) || 10;
+        // Get HILEGA cross angle parameters
+        hilega_min_angle = parseFloat($('#hilegaMinAngle').value) ?? 5.0;
+        hilega_max_angle = parseFloat($('#hilegaMaxAngle').value) ?? 85.0;
 
         // Get BLAST Volume Surge Ratio (user-configurable, persisted in localStorage)
         blast_volume_multiplier = parseFloat($('#blastVolumeMultiplier')?.value) || 5.0;
@@ -2227,7 +2069,7 @@ async function runScan(overrideConfig = null) {
         }
 
         // Build scanner label for logging
-        const scannerLabelsMap = { 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'rsi_cross_up_vwma': 'RSI Cross UP VWMA', 'rsi_cross_dn_vwma': 'RSI Cross DN VWMA', 'rsi_cross_up_alma': 'RSI Cross UP ALMA', 'rsi_cross_dn_alma': 'RSI Cross DN ALMA', 'hilega_ob': 'HILEGA OB', 'hilega_os': 'HILEGA OS', 'blast': 'BLAST' };
+        const scannerLabelsMap = { 'qwen': 'Qwen', 'ama_pro': 'AMA Pro', 'ama_pro_now': 'AMA Pro Now', 'qwen_now': 'Qwen Now', 'all': 'All Scanners', 'conflict_long': 'Long Conflict', 'conflict_short': 'Short Conflict', 'rsi_cross_up_vwma': 'RSI Cross UP VWMA', 'rsi_cross_dn_vwma': 'RSI Cross DN VWMA', 'rsi_cross_up_alma': 'RSI Cross UP ALMA', 'rsi_cross_dn_alma': 'RSI Cross DN ALMA', 'hilega_buy': 'HILEGA BUY', 'hilega_sell': 'HILEGA SELL', 'hilega_ob': 'HILEGA OB', 'hilega_os': 'HILEGA OS', 'blast': 'BLAST' };
         scannerLabel = isAllActive ? 'All Scanners' : (selectedScanners.length > 1 ? selectedScanners.map(s => scannerLabelsMap[s] || s).join(' + ') : (scannerLabelsMap[selectedScanners[0]] || selectedScanners[0]));
 
         // Save config for future rescans
@@ -2236,8 +2078,7 @@ async function runScan(overrideConfig = null) {
             enable_regime_filter, enable_volume_filter, enable_angle_filter,
             enable_tema_filter, enable_vwap_filter, enable_volume_filter_cross, enable_htf_rsi_filter,
             enable_cpr_narrow_filter,
-            hilega_buy_rsi, hilega_sell_rsi, hilega_rsi_mode,
-            alma_fixed_rsi_length, alma_fixed_vwma_length, alma_fixed_tema_length,
+            hilega_min_angle, hilega_max_angle,
             blast_volume_multiplier,
             scanner_type, scannerLabel
         };
@@ -2296,12 +2137,8 @@ async function runScan(overrideConfig = null) {
                 enable_volume_filter_cross,
                 enable_htf_rsi_filter,
                 enable_cpr_narrow_filter,
-                hilega_buy_rsi,
-                hilega_sell_rsi,
-                hilega_rsi_mode,
-                alma_fixed_rsi_length,
-                alma_fixed_vwma_length,
-                alma_fixed_tema_length,
+                hilega_min_angle,
+                hilega_max_angle,
                 blast_volume_multiplier
             })
         });
@@ -2312,7 +2149,6 @@ async function runScan(overrideConfig = null) {
 
         const data = await res.json();
         allResults = data.data || [];
-        allHilegaResults = data.hilega_data || [];
         allCrossResults = data.cross_data || [];
         allConflictResults = data.conflict_data || [];
         allObOsResults = data.ob_os_data || [];
@@ -2320,26 +2156,23 @@ async function runScan(overrideConfig = null) {
         // Sync BLAST header threshold label with the value that was actually scanned
         if (typeof blast_volume_multiplier === 'number') updateBlastThresholdLabel(blast_volume_multiplier);
 
-        const totalSignals = allResults.length + allHilegaResults.length + allCrossResults.length + allConflictResults.length + allObOsResults.length + allBlastResults.length;
+        const totalSignals = allResults.length + allCrossResults.length + allConflictResults.length + allObOsResults.length + allBlastResults.length;
 
         updateProgress(100, 'Scan complete!');
         const parts = [];
         if (allResults.length > 0) parts.push(`${allResults.length} AMA/Qwen`);
         if (allConflictResults.length > 0) parts.push(`${allConflictResults.length} Conflict`);
-        if (allHilegaResults.length > 0) parts.push(`${allHilegaResults.length} HILEGA`);
         if (allCrossResults.length > 0) parts.push(`${allCrossResults.length} Cross`);
         if (allObOsResults.length > 0) parts.push(`${allObOsResults.length} OB/OS`);
         if (allBlastResults.length > 0) parts.push(`${allBlastResults.length} BLAST`);
         addLogLine('success', `✅ SCAN COMPLETED — ${parts.length ? parts.join(' · ') : '0'} signal(s) found`);
 
         populateTfFilter();
-        populateHilegaTfFilter();
         populateCrossTfFilter();
         populateConflictTfFilter();
         populateObOsTfFilter();
         populateBlastTfFilter();
         renderResults();
-        renderHilegaResults();
         renderCrossResults();
         renderConflictResults();
         renderObOsResults();
@@ -2496,59 +2329,6 @@ function initFilterControls() {
             });
             th.classList.add(currentSort.asc ? 'sorted-asc' : 'sorted-desc');
             renderResults();
-        });
-    });
-
-    // ═══ HILEGA FILTER CONTROLS ═══
-
-    // Hilega signal filter chips
-    $$('#hilegaSignalFilterChips .chip').forEach(chip => {
-        chip.addEventListener('click', () => {
-            $$('#hilegaSignalFilterChips .chip').forEach(c => c.classList.remove('active'));
-            chip.classList.add('active');
-            renderHilegaResults();
-        });
-    });
-
-    // Hilega search
-    let hilegaSearchTimeout;
-    $('#hilegaSearchInput').addEventListener('input', () => {
-        clearTimeout(hilegaSearchTimeout);
-        hilegaSearchTimeout = setTimeout(renderHilegaResults, 200);
-    });
-
-    // Hilega timeframe filter
-    $('#hilegaTfFilter').addEventListener('change', renderHilegaResults);
-
-    // Hilega column sorting
-    $$('#hilegaSignalsTable th.sortable').forEach(th => {
-        th.addEventListener('click', () => {
-            const colMap = {
-                name: 'Crypto Name',
-                timeframe: 'Timeperiod',
-                signal: 'Signal',
-                volume: 'Volume',
-                angle: 'Angle',
-                rsitema: 'RSI-TEMA',
-                rsi: 'RSI',
-                vwma: 'VWMA',
-                change: 'Daily Change',
-                cprcategory: 'CPR Category'
-            };
-            const col = colMap[th.dataset.col];
-            if (currentHilegaSort.col === col) {
-                currentHilegaSort.asc = !currentHilegaSort.asc;
-            } else {
-                currentHilegaSort.col = col;
-                currentHilegaSort.asc = true;
-            }
-
-            // Update sort icons
-            $$('#hilegaSignalsTable th.sortable').forEach(t => {
-                t.classList.remove('sorted-asc', 'sorted-desc');
-            });
-            th.classList.add(currentHilegaSort.asc ? 'sorted-asc' : 'sorted-desc');
-            renderHilegaResults();
         });
     });
 

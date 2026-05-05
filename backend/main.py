@@ -70,12 +70,8 @@ class ScanRequest(BaseModel):
     enable_regime_filter: Optional[bool] = True  # Advanced Filter: Regime Detection
     enable_volume_filter: Optional[bool] = False  # Advanced Filter: Volume Confirmation
     enable_angle_filter: Optional[bool] = True  # Advanced Filter: Angle Threshold
-    hilega_buy_rsi: Optional[int] = 10  # HILEGA BUY RSI threshold
-    hilega_sell_rsi: Optional[int] = 90  # HILEGA SELL RSI threshold
-    hilega_rsi_mode: Optional[str] = "ALMA Fixed"  # HILEGA RSI Mode: 'ALMA Fixed', 'ALMA', 'RMA'
-    alma_fixed_rsi_length: Optional[int] = 11  # ALMA Fixed RSI length
-    alma_fixed_vwma_length: Optional[int] = 21  # ALMA Fixed VWMA length
-    alma_fixed_tema_length: Optional[int] = 10  # ALMA Fixed TEMA length
+    hilega_min_angle: Optional[float] = 5.0   # HILEGA cross angle minimum (degrees, absolute)
+    hilega_max_angle: Optional[float] = 85.0  # HILEGA cross angle maximum (degrees, absolute)
     # Enterprise Cross Scanner Filters
     enable_tema_filter: Optional[bool] = False
     enable_vwap_filter: Optional[bool] = False
@@ -112,12 +108,8 @@ class AlertConfig(BaseModel):
     enable_volume_filter_cross: bool = False
     enable_htf_rsi_filter: bool = False
     enable_cpr_narrow_filter: bool = False
-    hilega_buy_rsi: int = 10
-    hilega_sell_rsi: int = 90
-    hilega_rsi_mode: str = "ALMA Fixed"
-    alma_fixed_rsi_length: int = 11
-    alma_fixed_vwma_length: int = 21
-    alma_fixed_tema_length: int = 10
+    hilega_min_angle: float = 5.0
+    hilega_max_angle: float = 85.0
 
 # In-memory stores — state is never persisted (tasks die with the process)
 alert_configs: Dict[str, AlertConfig] = {}
@@ -273,12 +265,8 @@ async def _alert_worker(alert_id: str):
                     enable_regime_filter=config.enable_regime_filter,
                     enable_volume_filter=config.enable_volume_filter,
                     enable_angle_filter=config.enable_angle_filter,
-                    hilega_buy_rsi=config.hilega_buy_rsi,
-                    hilega_sell_rsi=config.hilega_sell_rsi,
-                    hilega_rsi_mode=config.hilega_rsi_mode,
-                    alma_fixed_rsi_length=config.alma_fixed_rsi_length,
-                    alma_fixed_vwma_length=config.alma_fixed_vwma_length,
-                    alma_fixed_tema_length=config.alma_fixed_tema_length,
+                    hilega_min_angle=config.hilega_min_angle,
+                    hilega_max_angle=config.hilega_max_angle,
                     enable_tema_filter=config.enable_tema_filter,
                     enable_vwap_filter=config.enable_vwap_filter,
                     enable_volume_filter_cross=config.enable_volume_filter_cross,
@@ -389,12 +377,8 @@ async def trigger_scan(request: ScanRequest):
             enable_regime_filter=request.enable_regime_filter,  # Pass filter toggles
             enable_volume_filter=request.enable_volume_filter,
             enable_angle_filter=request.enable_angle_filter,
-            hilega_buy_rsi=request.hilega_buy_rsi,
-            hilega_sell_rsi=request.hilega_sell_rsi,
-            hilega_rsi_mode=request.hilega_rsi_mode,
-            alma_fixed_rsi_length=request.alma_fixed_rsi_length,
-            alma_fixed_vwma_length=request.alma_fixed_vwma_length,
-            alma_fixed_tema_length=request.alma_fixed_tema_length,
+            hilega_min_angle=request.hilega_min_angle,
+            hilega_max_angle=request.hilega_max_angle,
             enable_tema_filter=request.enable_tema_filter,
             enable_vwap_filter=request.enable_vwap_filter,
             enable_volume_filter_cross=request.enable_volume_filter_cross,
