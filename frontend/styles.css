@@ -3391,6 +3391,85 @@ textarea.journal-input {
 .obos-gap-ob  { color: #ff4757; font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; }
 .obos-gap-os  { color: #26de81; font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; }
 
+/* ── Auto-Adapt row ── */
+.obos-adapt-row {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(99,102,241,0.08);
+    border: 1px solid rgba(99,102,241,0.25);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+}
+.obos-toggle-wrap {
+    position: relative; display: inline-block;
+    width: 42px; height: 24px; flex-shrink: 0;
+}
+.obos-toggle-wrap input { opacity: 0; width: 0; height: 0; }
+.obos-toggle-slider {
+    position: absolute; cursor: pointer;
+    inset: 0; border-radius: 24px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    transition: .25s;
+}
+.obos-toggle-slider::before {
+    content: ''; position: absolute;
+    width: 18px; height: 18px; border-radius: 50%;
+    left: 2px; top: 2px;
+    background: #fff;
+    transition: .25s;
+}
+.obos-toggle-wrap input:checked + .obos-toggle-slider {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    border-color: #6366f1;
+}
+.obos-toggle-wrap input:checked + .obos-toggle-slider::before {
+    transform: translateX(18px);
+}
+.obos-adapt-label {
+    display: block; font-weight: 600; font-size: 0.85rem;
+    color: var(--text-primary);
+}
+.obos-adapt-badge {
+    display: inline-block; font-size: 0.62rem; font-weight: 700;
+    padding: 1px 7px; border-radius: 8px; margin-left: 6px;
+    background: rgba(99,102,241,0.25); color: #a5b4fc;
+    border: 1px solid rgba(99,102,241,0.4);
+    letter-spacing: 0.04em; vertical-align: middle;
+}
+.obos-adapt-sub {
+    display: block; font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;
+}
+
+/* ── Adaptive preview table ── */
+.obos-adapt-preview {
+    margin-bottom: 10px;
+    border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--glass-border);
+}
+.obos-adapt-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 0.78rem; font-family: var(--font-mono);
+}
+.obos-adapt-table thead tr {
+    background: rgba(255,255,255,0.05);
+}
+.obos-adapt-table th {
+    padding: 6px 12px; text-align: left;
+    font-size: 0.68rem; font-weight: 600;
+    color: var(--text-muted); letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--glass-border);
+}
+.obos-adapt-table td {
+    padding: 5px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    color: var(--text-secondary);
+}
+.obos-adapt-table tr:last-child td { border-bottom: none; }
+.obos-adapt-table td:nth-child(2) { color: #26de81; font-weight: 600; }
+.obos-adapt-table td:nth-child(3) { color: #a5b4fc; font-weight: 600; }
+.obos-adapt-table td:nth-child(4) { color: var(--text-muted); font-size: 0.70rem; }
+
 /* ── Config tag ── */
 .obos-cfg {
     font-family: var(--font-mono); font-size: .70rem; color: var(--text-muted);

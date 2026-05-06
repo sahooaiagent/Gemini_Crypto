@@ -13,7 +13,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="styles.css?v=11">
+    <link rel="stylesheet" href="styles.css?v=12">
     <link rel="stylesheet" href="modern-config.css?v=1">
     <script>
         // Restore persisted theme BEFORE paint (avoid flash).
@@ -1444,33 +1444,63 @@
                                 <i class="fas fa-chevron-down collapse-icon"></i>
                             </div>
                             <div class="section-content" id="obos-rsi-settings">
-                                <div class="params-row-modern">
-                                    <div class="param-group-modern">
-                                        <label>True RSI Type</label>
-                                        <select id="obobRsiType" class="select-modern">
-                                            <option value="ALMA" selected>ALMA (True RSI)</option>
-                                            <option value="Standard">Standard (Wilder)</option>
-                                        </select>
+
+                                <!-- Auto-Adapt toggle -->
+                                <div class="obos-adapt-row">
+                                    <label class="obos-toggle-wrap">
+                                        <input type="checkbox" id="obobAutoAdapt" checked>
+                                        <span class="obos-toggle-slider"></span>
+                                    </label>
+                                    <div>
+                                        <span class="obos-adapt-label">Auto-Adapt Lengths <span class="obos-adapt-badge">HILEGA HTF</span></span>
+                                        <span class="obos-adapt-sub">RSI &amp; ALMA lengths auto-computed per timeframe (matches Pine Script)</span>
                                     </div>
-                                    <div class="param-group-modern">
-                                        <label>RSI Length</label>
-                                        <input type="number" id="obobRsiLength" class="select-modern" value="11" min="3" max="50">
+                                    <select id="obobSensitivity" class="select-modern" style="width:110px;margin-left:auto">
+                                        <option value="Low">Low</option>
+                                        <option value="Medium" selected>Medium</option>
+                                        <option value="High">High</option>
+                                    </select>
+                                </div>
+
+                                <!-- Adaptive preview table -->
+                                <div id="obobAdaptPreview" class="obos-adapt-preview">
+                                    <table class="obos-adapt-table">
+                                        <thead><tr><th>TF</th><th>RSI len</th><th>ALMA len</th><th>Higher TF ref</th></tr></thead>
+                                        <tbody id="obobAdaptBody"></tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Manual override (hidden when auto-adapt ON) -->
+                                <div id="obobManualSettings" style="display:none">
+                                    <div class="params-row-modern">
+                                        <div class="param-group-modern">
+                                            <label>True RSI Type</label>
+                                            <select id="obobRsiType" class="select-modern">
+                                                <option value="ALMA" selected>ALMA (True RSI)</option>
+                                                <option value="Standard">Standard (Wilder)</option>
+                                            </select>
+                                        </div>
+                                        <div class="param-group-modern">
+                                            <label>RSI Length</label>
+                                            <input type="number" id="obobRsiLength" class="select-modern" value="11" min="3" max="50">
+                                        </div>
+                                    </div>
+                                    <div class="params-row-modern" style="margin-top:14px">
+                                        <div class="param-group-modern">
+                                            <label>MA Type</label>
+                                            <select id="obobMaType" class="select-modern">
+                                                <option value="ALMA" selected>ALMA</option>
+                                                <option value="TEMA">TEMA</option>
+                                            </select>
+                                        </div>
+                                        <div class="param-group-modern">
+                                            <label>MA Length</label>
+                                            <input type="number" id="obobMaLength" class="select-modern" value="9" min="2" max="50">
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="params-row-modern" style="margin-top:14px">
-                                    <div class="param-group-modern">
-                                        <label>MA Type (smoothing of RSI)</label>
-                                        <select id="obobMaType" class="select-modern">
-                                            <option value="ALMA" selected>ALMA</option>
-                                            <option value="TEMA">TEMA</option>
-                                        </select>
-                                    </div>
-                                    <div class="param-group-modern">
-                                        <label>MA Length</label>
-                                        <input type="number" id="obobMaLength" class="select-modern" value="9" min="2" max="50">
-                                    </div>
-                                </div>
-                                <span class="hint-modern" style="margin-top:10px">Detection uses last 2 fully closed candles</span>
+
+                                <span class="hint-modern" style="margin-top:10px">Detection uses last 2 fully closed candles · True RSI uses ALMA(sigma=5) · Signal line ALMA(sigma=6)</span>
                             </div>
                         </div>
 
@@ -1728,7 +1758,7 @@
      ════════════════════════════════════════════════════════════════════ -->
     <div id="toastContainer"></div>
 
-    <script src="app.js?v=34"></script>
+    <script src="app.js?v=35"></script>
 </body>
 
 </html>

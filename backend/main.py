@@ -1168,10 +1168,12 @@ async def save_performance_tracker(data: PerformanceTrackerData):
 class ObOsScanRequest(BaseModel):
     timeframes: List[str]
     crypto_count: Optional[int] = 50
-    rsi_type: Optional[str] = "ALMA"    # 'ALMA' or 'Standard'
-    rsi_length: Optional[int] = 11
-    ma_type: Optional[str] = "ALMA"     # 'ALMA' or 'TEMA'
-    ma_length: Optional[int] = 9
+    rsi_type: Optional[str]   = "ALMA"    # 'ALMA' (True RSI) or 'Standard' (Wilder)
+    rsi_length: Optional[int] = 11        # used only when auto_adapt=False
+    ma_type: Optional[str]    = "ALMA"    # 'ALMA' or 'TEMA'
+    ma_length: Optional[int]  = 9         # used only when auto_adapt=False
+    auto_adapt: Optional[bool]  = True    # use Pine Script adaptive lengths per TF
+    sensitivity: Optional[str]  = "Medium"  # 'Low' | 'Medium' | 'High'
 
 latest_ob_os_scan = {
     "results": [],
@@ -1197,6 +1199,8 @@ async def trigger_ob_os_scan(request: ObOsScanRequest):
             rsi_length=request.rsi_length,
             ma_type=request.ma_type,
             ma_length=request.ma_length,
+            auto_adapt=request.auto_adapt,
+            sensitivity=request.sensitivity,
         )
         duration = round(time.time() - start, 2)
         scan_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")

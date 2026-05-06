@@ -3252,11 +3252,67 @@ const obobState = {
     scanning:    false,
 };
 
+// ── Adaptive length preview (mirrors Pine Script formula) ──
+const OBOS_HIGHER_TF = m =>
+    m <= 5 ? 60 : m <= 15 ? 240 : m <= 30 ? 1440 :
+    m <= 60 ? 10080 : m <= 240 ? 10080 :
+    m <= 2880 ? 43200 : 525600;
+
+const TF_MINUTES = {
+    '5min':5,'10min':10,'15min':15,'30min':30,
+    '1hr':60,'2hr':120,'4hr':240,'6hr':360,'12hr':720,
+    '1 day':1440,'1 week':10080,
+};
+
+function obobAdaptiveLengths(tfLabel, sensitivity = 'Medium') {
+    const mult = sensitivity === 'High' ? 1.2 : sensitivity === 'Low' ? 0.8 : 1.0;
+    const tfMin = TF_MINUTES[tfLabel] || 60;
+    const htf   = OBOS_HIGHER_TF(tfMin);
+    const logV  = Math.log10(htf + 1);
+    const rsiLen  = Math.max(7,  Math.min(35,  Math.round(9  + logV * 7  * mult)));
+    const almaLen = Math.max(6,  Math.min(100, Math.round(8  + logV * 6  * mult)));
+    return { rsiLen, almaLen, htfMin: htf };
+}
+
+function obobRenderAdaptPreview() {
+    const tbody = document.getElementById('obobAdaptBody');
+    if (!tbody) return;
+    const sens = document.getElementById('obobSensitivity')?.value || 'Medium';
+    const activeTfs = [...$$('#obobTfChips .obob-tf.active')].map(b => b.dataset.tf);
+    const tfs = activeTfs.length ? activeTfs : Object.keys(TF_MINUTES);
+    const htfLabel = m => m >= 525600 ? '1Y' : m >= 43200 ? '1M' : m >= 10080 ? '1W' : m >= 1440 ? '1D' : m >= 240 ? '4H' : m >= 60 ? '1H' : `${m}m`;
+    tbody.innerHTML = tfs.map(tf => {
+        const { rsiLen, almaLen, htfMin } = obobAdaptiveLengths(tf, sens);
+        return `<tr><td>${tf}</td><td>${rsiLen}</td><td>${almaLen}</td><td>${htfLabel(htfMin)}</td></tr>`;
+    }).join('');
+}
+
 function initObOs() {
     // ── TF chip toggles — direct per-button listeners ──
     $$('#obobTfChips .obob-tf').forEach(btn => {
-        btn.addEventListener('click', () => btn.classList.toggle('active'));
+        btn.addEventListener('click', () => {
+            btn.classList.toggle('active');
+            obobRenderAdaptPreview();
+        });
     });
+
+    // ── Auto-Adapt toggle ──
+    const adaptToggle = document.getElementById('obobAutoAdapt');
+    const manualDiv   = document.getElementById('obobManualSettings');
+    const adaptPrev   = document.getElementById('obobAdaptPreview');
+    function syncAdaptUI() {
+        const on = adaptToggle?.checked;
+        if (manualDiv) manualDiv.style.display = on ? 'none' : '';
+        if (adaptPrev) adaptPrev.style.display  = on ? ''     : 'none';
+        obobRenderAdaptPreview();
+    }
+    if (adaptToggle) adaptToggle.addEventListener('change', syncAdaptUI);
+
+    // ── Sensitivity ──
+    const sensEl = document.getElementById('obobSensitivity');
+    if (sensEl) sensEl.addEventListener('change', obobRenderAdaptPreview);
+
+    syncAdaptUI();  // set initial state
 
     // ── Signal filter chips ──
     $$('#obobSignalChips .chip').forEach(chip => {
@@ -3308,14 +3364,18 @@ function initObOs() {
 }
 
 function obobGetConfig() {
-    const tfs = [...$$('#obobTfChips .obob-tf.active')].map(b => b.dataset.tf);
+    const tfs       = [...$$('#obobTfChips .obob-tf.active')].map(b => b.dataset.tf);
+    const autoAdapt = document.getElementById('obobAutoAdapt')?.checked !== false;
     return {
         timeframes:   tfs.length ? tfs : ['15min', '1hr', '4hr'],
         crypto_count: parseInt($('#obobCryptoCount')?.value || 50),
-        rsi_type:     $('#obobRsiType')?.value || 'ALMA',
-        rsi_length:   parseInt($('#obobRsiLength')?.value || 11),
-        ma_type:      $('#obobMaType')?.value || 'ALMA',
-        ma_length:    parseInt($('#obobMaLength')?.value || 9),
+        auto_adapt:   autoAdapt,
+        sensitivity:  document.getElementById('obobSensitivity')?.value || 'Medium',
+        // Manual override fields (only used when auto_adapt=false):
+        rsi_type:     $('#obobRsiType')?.value  || 'ALMA',
+        rsi_length:   parseInt($('#obobRsiLength')?.value  || 11),
+        ma_type:      $('#obobMaType')?.value   || 'ALMA',
+        ma_length:    parseInt($('#obobMaLength')?.value   || 9),
     };
 }
 
@@ -3465,7 +3525,7 @@ function obobRenderTable(rows) {
             <td><span class="${gapClass}">${gapSign}${(+r.Gap).toFixed(2)}</span></td>
             <td class="${changeClass}">${changeSign}${(+r.Change).toFixed(2)}%</td>
             <td style="font-family:var(--font-mono);font-size:0.83rem">${r.Price}</td>
-            <td><span class="obos-cfg">${r.RSI_Type}(${r.RSI_Length})</span></td>
+            <td><span class="obos-cfg">${r.RSI_Type}(${r.RSI_Length}) · ALMA(${r.MA_Length})${r.Auto_Adapt ? ' <span style="color:#a5b4fc;font-size:.65rem">AUTO</span>' : ''}</span></td>
         </tr>`;
     }).join('');
 }
