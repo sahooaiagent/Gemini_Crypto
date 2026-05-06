@@ -2168,33 +2168,21 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
         if pd.isna(rsx_curr) or pd.isna(rsx_prev) or pd.isna(alma_curr) or pd.isna(alma_prev):
             continue
 
-        diff      = rsx_curr - alma_curr
-        prev_diff = rsx_prev - alma_prev
-        # Cross angle: the visual angle between RSI and ALMA lines at crossover
-        # Calculate individual line angles relative to horizontal, then the difference
-        rsx_slope  = rsx_curr  - rsx_prev
-        alma_slope = alma_curr - alma_prev
+        diff = rsx_curr - alma_curr
 
-        # Angle each line makes with horizontal
-        angle_rsi = np.degrees(np.arctan(rsx_slope))
-        angle_alma = np.degrees(np.arctan(alma_slope))
+        # Cross angle (kept for display/logging; no longer used as a filter)
+        rsx_slope   = rsx_curr  - rsx_prev
+        alma_slope  = alma_curr - alma_prev
+        cross_angle = np.degrees(np.arctan(rsx_slope)) - np.degrees(np.arctan(alma_slope))
 
-        # Crossing angle: difference between their slopes
-        # Positive when RSI is steeper upward (crossover/OS), negative when steeper downward (crossunder/OB)
-        cross_angle = angle_rsi - angle_alma
-
-        is_bullish = close.iloc[idx] > open_.iloc[idx]
-        is_bearish = close.iloc[idx] < open_.iloc[idx]
-
-        # Pine Script crossover:  rsx crosses OVER  alma  (rsx was below, now above)
+        # Pine Script crossover:  rsx crosses OVER  alma  (rsx was below, now above) → OS
         cross_up   = (rsx_curr > alma_curr) and (rsx_prev <= alma_prev)
-        # Pine Script crossunder: rsx crosses UNDER alma  (rsx was above, now below)
+        # Pine Script crossunder: rsx crosses UNDER alma  (rsx was above, now below) → OB
         cross_down = (rsx_curr < alma_curr) and (rsx_prev >= alma_prev)
 
-        angle_ok = min_angle <= cross_angle <= max_angle
-
-        # HILEGA OS (oversold reversal — buy) when RSI crosses ABOVE ALMA → RSI > ALMA
-        if cross_up and diff > 1 and is_bullish and angle_ok:
+        # Pure crossover — no candle-direction, no gap, no angle filter
+        # (matches the dedicated OB/OS scanner logic exactly)
+        if cross_up:
             state         = 'OS'
             candle_status = label
             rsx_val       = rsx_curr
@@ -2203,8 +2191,7 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
             angle_val     = cross_angle
             break
 
-        # HILEGA OB (overbought reversal — sell) when RSI crosses BELOW ALMA → RSI < ALMA
-        if cross_down and diff < -1 and is_bearish and angle_ok:
+        if cross_down:
             state         = 'OB'
             candle_status = label
             rsx_val       = rsx_curr
@@ -2227,7 +2214,7 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
         f"HTF={htf_display} ({higher_tf_minutes}min) | "
         f"RSI len={rsi_len} ALMA len={alma_len} | "
         f"rsx={rsx_series.iloc[-2]:.2f} alma={alma_series.iloc[-2]:.2f} diff={rsx_series.iloc[-2]-alma_series.iloc[-2]:.2f} | "
-        f"angle_filter=[{min_angle}°,{max_angle}°] | state={state} ({candle_status})"
+        f"state={state} ({candle_status})"
     )
 
     return state, rsx_val, alma_val, diff_val, candle_status, angle_val
