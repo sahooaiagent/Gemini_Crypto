@@ -2764,12 +2764,14 @@ function initTickerSpeedControl() {
     // Load saved speed or default to 45s
     const savedSpeed = localStorage.getItem('tickerSpeed') || '45';
     speedSlider.value = savedSpeed;
-    document.documentElement.style.setProperty('--ticker-speed', savedSpeed + 's');
+    document.documentElement.style.setProperty('--ticker-speed',    savedSpeed + 's');
+    document.documentElement.style.setProperty('--ticker-speed-gl', savedSpeed + 's');
 
-    // Update speed on slider change
+    // Update speed on slider change (controls both tape lines)
     speedSlider.addEventListener('input', (e) => {
         const speed = e.target.value;
-        document.documentElement.style.setProperty('--ticker-speed', speed + 's');
+        document.documentElement.style.setProperty('--ticker-speed',    speed + 's');
+        document.documentElement.style.setProperty('--ticker-speed-gl', speed + 's');
         localStorage.setItem('tickerSpeed', speed);
     });
 }
