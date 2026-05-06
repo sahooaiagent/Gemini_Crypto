@@ -18,6 +18,7 @@ import sys
 
 # Import scanner logic
 import scanner
+import ob_os_scanner
 
 app = FastAPI(title="Gemini Scanner Enterprise API")
 
@@ -1160,6 +1161,73 @@ async def save_performance_tracker(data: PerformanceTrackerData):
 
 # ════════════════════════════════════════════════════════════════════
 # STATIC FILES & FRONTEND
+# ════════════════════════════════════════════════════════════════════
+# OB/OS STANDALONE SCANNER
+# ════════════════════════════════════════════════════════════════════
+
+class ObOsScanRequest(BaseModel):
+    timeframes: List[str]
+    crypto_count: Optional[int] = 50
+    rsi_type: Optional[str] = "ALMA"    # 'ALMA' or 'Standard'
+    rsi_length: Optional[int] = 11
+    ma_type: Optional[str] = "ALMA"     # 'ALMA' or 'TEMA'
+    ma_length: Optional[int] = 9
+
+latest_ob_os_scan = {
+    "results": [],
+    "ob_count": 0,
+    "os_count": 0,
+    "scan_time": None,
+    "duration": None,
+}
+
+@app.post("/api/ob-os/scan")
+async def trigger_ob_os_scan(request: ObOsScanRequest):
+    """Standalone OB/OS scanner — crossover/crossunder of True RSI vs its MA"""
+    logging.info(
+        f"OB/OS scan | TFs={request.timeframes} N={request.crypto_count} | "
+        f"RSI={request.rsi_type}({request.rsi_length}) MA={request.ma_type}({request.ma_length})"
+    )
+    try:
+        start = time.time()
+        results = await ob_os_scanner.run_ob_os_scan(
+            timeframes=request.timeframes,
+            crypto_count=request.crypto_count,
+            rsi_type=request.rsi_type,
+            rsi_length=request.rsi_length,
+            ma_type=request.ma_type,
+            ma_length=request.ma_length,
+        )
+        duration = round(time.time() - start, 2)
+        scan_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        ob_count = sum(1 for r in results if r['Signal'] == 'OB')
+        os_count = sum(1 for r in results if r['Signal'] == 'OS')
+
+        latest_ob_os_scan["results"]   = results
+        latest_ob_os_scan["ob_count"]  = ob_count
+        latest_ob_os_scan["os_count"]  = os_count
+        latest_ob_os_scan["scan_time"] = scan_time
+        latest_ob_os_scan["duration"]  = duration
+
+        logging.info(f"OB/OS scan done in {duration}s | OB={ob_count} OS={os_count}")
+        return {
+            "status": "success",
+            "data": results,
+            "ob_count": ob_count,
+            "os_count": os_count,
+            "scan_time": scan_time,
+            "duration": duration,
+        }
+    except Exception as e:
+        logging.error(f"OB/OS scan error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/ob-os/results")
+async def get_ob_os_results():
+    """Return latest OB/OS scan results"""
+    return latest_ob_os_scan
+
 # ════════════════════════════════════════════════════════════════════
 
 # Serve static frontend files

@@ -87,6 +87,11 @@
                 <span class="nav-badge hidden" id="alertNavBadge">0</span>
                 <div class="nav-indicator"></div>
             </a>
+            <a class="nav-link" data-tab="obos" id="nav-obos">
+                <div class="nav-icon"><i class="fas fa-temperature-half"></i></div>
+                <span>OB / OS</span>
+                <div class="nav-indicator"></div>
+            </a>
         </nav>
 
         <div class="sidebar-footer">
@@ -817,8 +822,6 @@
                                     <button class="chip-modern scanner-chip" data-scanner="qwen">Qwen Pre</button>
                                     <button class="chip-modern scanner-chip" data-scanner="ama_pro_now">AMA Pro Now</button>
                                     <button class="chip-modern scanner-chip" data-scanner="qwen_now">Qwen Now</button>
-                                    <button class="chip-modern scanner-chip" data-scanner="hilega_buy">OS</button>
-                                    <button class="chip-modern scanner-chip" data-scanner="hilega_sell">OB</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_up_vwma">RSI Cross UP VWMA</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_dn_vwma">RSI Cross DN VWMA</button>
                                     <button class="chip-modern scanner-chip" data-scanner="rsi_cross_up_alma">RSI Cross UP ALMA</button>
@@ -1372,6 +1375,263 @@
                 </div>
             </div>
         </section>
+
+        <!-- ══════════════════════════════════════════════════════════
+             OB / OS TAB
+        ══════════════════════════════════════════════════════════ -->
+        <section class="tab-content" id="tab-obos">
+            <header class="page-header">
+                <div>
+                    <h1 class="page-title">OB / OS Scanner</h1>
+                    <p class="page-subtitle">Detect Overbought &amp; Oversold via True RSI crossover / crossunder the MA</p>
+                </div>
+            </header>
+
+            <!-- Sticky Run Button -->
+            <div class="sticky-scan-btn-wrap">
+                <button class="btn btn-primary btn-scan-sticky pulse-glow" id="obobRunBtn">
+                    <i class="fas fa-play-circle"></i>
+                    <span>Run OB/OS Scan</span>
+                </button>
+            </div>
+
+            <div class="scanner-layout-modern">
+
+                <!-- ── Configuration Card ── -->
+                <div class="card scanner-config-card modern-card full-width-card">
+                    <div class="card-header-modern">
+                        <div class="card-icon-wrap">
+                            <i class="fas fa-temperature-half"></i>
+                        </div>
+                        <div>
+                            <h2 class="card-title-modern">OB/OS Configuration</h2>
+                            <p class="card-subtitle-modern">Crossover/crossunder of True RSI vs its smoothed MA</p>
+                        </div>
+                    </div>
+
+                    <div class="config-grid-modern">
+
+                        <!-- Signal Logic -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse" data-collapse="obos-logic">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-info-circle section-icon"></i>
+                                    <span class="section-title">Signal Logic</span>
+                                </div>
+                                <i class="fas fa-chevron-down collapse-icon"></i>
+                            </div>
+                            <div class="section-content" id="obos-logic">
+                                <div class="obos-logic-box">
+                                    <div class="obos-logic-row">
+                                        <span class="obos-badge os">OS — Oversold</span>
+                                        <span>True RSI <strong>crosses over</strong> the MA (rises from below to above) → potential buy</span>
+                                    </div>
+                                    <div class="obos-logic-row">
+                                        <span class="obos-badge ob">OB — Overbought</span>
+                                        <span>True RSI <strong>crosses under</strong> the MA (drops from above to below) → potential sell</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RSI + MA Settings -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse" data-collapse="obos-rsi-settings">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-wave-square section-icon"></i>
+                                    <span class="section-title">True RSI &amp; MA Settings</span>
+                                </div>
+                                <i class="fas fa-chevron-down collapse-icon"></i>
+                            </div>
+                            <div class="section-content" id="obos-rsi-settings">
+                                <div class="params-row-modern">
+                                    <div class="param-group-modern">
+                                        <label>True RSI Type</label>
+                                        <select id="obobRsiType" class="select-modern">
+                                            <option value="ALMA" selected>ALMA (True RSI)</option>
+                                            <option value="Standard">Standard (Wilder)</option>
+                                        </select>
+                                    </div>
+                                    <div class="param-group-modern">
+                                        <label>RSI Length</label>
+                                        <input type="number" id="obobRsiLength" class="select-modern" value="11" min="3" max="50">
+                                    </div>
+                                </div>
+                                <div class="params-row-modern" style="margin-top:14px">
+                                    <div class="param-group-modern">
+                                        <label>MA Type (smoothing of RSI)</label>
+                                        <select id="obobMaType" class="select-modern">
+                                            <option value="ALMA" selected>ALMA</option>
+                                            <option value="TEMA">TEMA</option>
+                                        </select>
+                                    </div>
+                                    <div class="param-group-modern">
+                                        <label>MA Length</label>
+                                        <input type="number" id="obobMaLength" class="select-modern" value="9" min="2" max="50">
+                                    </div>
+                                </div>
+                                <span class="hint-modern" style="margin-top:10px">Detection uses last 2 fully closed candles</span>
+                            </div>
+                        </div>
+
+                        <!-- Timeframes -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse" data-collapse="obos-tf">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-clock section-icon"></i>
+                                    <span class="section-title">Timeframes</span>
+                                </div>
+                                <i class="fas fa-chevron-down collapse-icon"></i>
+                            </div>
+                            <div class="section-content" id="obos-tf">
+                                <div class="tf-chips-modern" id="obobTfChips">
+                                    <button class="chip-modern obob-tf active" data-tf="5min">5m</button>
+                                    <button class="chip-modern obob-tf" data-tf="10min">10m</button>
+                                    <button class="chip-modern obob-tf active" data-tf="15min">15m</button>
+                                    <button class="chip-modern obob-tf" data-tf="30min">30m</button>
+                                    <button class="chip-modern obob-tf active" data-tf="1hr">1h</button>
+                                    <button class="chip-modern obob-tf" data-tf="2hr">2h</button>
+                                    <button class="chip-modern obob-tf active" data-tf="4hr">4h</button>
+                                    <button class="chip-modern obob-tf" data-tf="6hr">6h</button>
+                                    <button class="chip-modern obob-tf" data-tf="12hr">12h</button>
+                                    <button class="chip-modern obob-tf" data-tf="1 day">1D</button>
+                                    <button class="chip-modern obob-tf" data-tf="1 week">1W</button>
+                                </div>
+                                <span class="hint-modern" style="margin-top:10px">Select one or more timeframes</span>
+                            </div>
+                        </div>
+
+                        <!-- Universe -->
+                        <div class="config-card-section">
+                            <div class="section-header-collapse" data-collapse="obos-universe">
+                                <div class="section-title-wrap">
+                                    <i class="fas fa-coins section-icon"></i>
+                                    <span class="section-title">Universe</span>
+                                </div>
+                                <i class="fas fa-chevron-down collapse-icon"></i>
+                            </div>
+                            <div class="section-content" id="obos-universe">
+                                <div class="form-group-modern">
+                                    <label class="label-modern">
+                                        <i class="fas fa-coins label-icon"></i>
+                                        Top N Crypto Pairs (by 24h volume)
+                                    </label>
+                                    <select id="obobCryptoCount" class="select-modern">
+                                        <option value="20">Top 20</option>
+                                        <option value="50" selected>Top 50</option>
+                                        <option value="100">Top 100</option>
+                                        <option value="200">Top 200</option>
+                                    </select>
+                                    <span class="hint-modern">Scans top N Binance USDT spot pairs</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div><!-- /config-grid-modern -->
+                </div><!-- /config card -->
+
+                <!-- Progress Bar -->
+                <div class="scan-progress-wrap hidden" id="obobProgressWrap">
+                    <div class="progress-header">
+                        <span class="progress-label">Scanning OB/OS…</span>
+                        <span class="progress-pct" id="obobProgressPct">0%</span>
+                    </div>
+                    <div class="progress-bar-track">
+                        <div class="progress-bar-fill" id="obobProgressBar"></div>
+                        <div class="progress-bar-glow"></div>
+                    </div>
+                    <p class="progress-detail" id="obobProgressDetail">Initialising…</p>
+                </div>
+
+                <!-- Stats -->
+                <div class="stats-grid obos-stats-grid" id="obobStatsGrid" style="display:none">
+                    <div class="stat-card" data-accent="purple">
+                        <div class="stat-icon-wrap"><i class="fas fa-signal"></i></div>
+                        <div class="stat-body">
+                            <span class="stat-value" id="obobTotal">0</span>
+                            <span class="stat-label">Total Signals</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" data-accent="red">
+                        <div class="stat-icon-wrap"><i class="fas fa-fire"></i></div>
+                        <div class="stat-body">
+                            <span class="stat-value" id="obobObCount">0</span>
+                            <span class="stat-label">Overbought (OB)</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" data-accent="cyan">
+                        <div class="stat-icon-wrap"><i class="fas fa-snowflake"></i></div>
+                        <div class="stat-body">
+                            <span class="stat-value" id="obobOsCount">0</span>
+                            <span class="stat-label">Oversold (OS)</span>
+                        </div>
+                    </div>
+                    <div class="stat-card" data-accent="green">
+                        <div class="stat-icon-wrap"><i class="fas fa-clock"></i></div>
+                        <div class="stat-body">
+                            <span class="stat-value" id="obobScanTime">—</span>
+                            <span class="stat-label">Last Scan</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results Table -->
+                <div class="card modern-card full-width-card">
+                    <div class="card-header">
+                        <h2><i class="fas fa-bolt"></i> OB / OS Signals</h2>
+                        <div class="card-actions">
+                            <div class="filter-chips" id="obobSignalChips">
+                                <button class="chip active" data-filter="all">All</button>
+                                <button class="chip" data-filter="OB">
+                                    <span class="chip-dot" style="background:var(--red)"></span> OB
+                                </button>
+                                <button class="chip" data-filter="OS">
+                                    <span class="chip-dot" style="background:var(--cyan)"></span> OS
+                                </button>
+                            </div>
+                            <select class="filter-dropdown" id="obobTfFilter">
+                                <option value="all">All Timeframes</option>
+                            </select>
+                            <div class="search-input-wrap" style="max-width:180px">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="obobSearch" placeholder="Search…" autocomplete="off">
+                            </div>
+                            <button class="btn btn-sm btn-ghost" id="obobExportBtn">
+                                <i class="fas fa-download"></i> Export
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-wrap">
+                        <table id="obobTable">
+                            <thead>
+                                <tr>
+                                    <th class="sortable" data-col="Name"><span>Asset</span><i class="fas fa-sort sort-icon"></i></th>
+                                    <th class="sortable" data-col="Timeframe"><span>Timeframe</span><i class="fas fa-sort sort-icon"></i></th>
+                                    <th class="sortable" data-col="Signal"><span>Signal</span><i class="fas fa-sort sort-icon"></i></th>
+                                    <th class="sortable" data-col="RSI"><span>True RSI</span><i class="fas fa-sort sort-icon"></i></th>
+                                    <th class="sortable" data-col="MA"><span>MA</span><i class="fas fa-sort sort-icon"></i></th>
+                                    <th class="sortable" data-col="Gap"><span>Gap</span><i class="fas fa-sort sort-icon"></i></th>
+                                    <th class="sortable" data-col="Change"><span>Daily Chg</span><i class="fas fa-sort sort-icon"></i></th>
+                                    <th>Price</th>
+                                    <th>Config</th>
+                                </tr>
+                            </thead>
+                            <tbody id="obobBody"></tbody>
+                        </table>
+                        <div class="empty-state" id="obobEmpty">
+                            <i class="fas fa-satellite-dish"></i>
+                            <p>No OB/OS signals yet</p>
+                            <span>Configure settings above and click Run OB/OS Scan</span>
+                        </div>
+                    </div>
+                    <div class="table-footer">
+                        <span id="obobCount">0 results</span>
+                        <span id="obobDuration"></span>
+                    </div>
+                </div>
+
+            </div><!-- /scanner-layout-modern -->
+        </section><!-- /tab-obos -->
 
     </main>
 

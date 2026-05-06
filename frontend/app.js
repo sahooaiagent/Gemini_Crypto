@@ -3234,3 +3234,240 @@ document.addEventListener('DOMContentLoaded', () => {
         renderBlastResults();
     });
 });
+
+// ══════════════════════════════════════════════════════════════
+// OB / OS STANDALONE SCANNER
+// ══════════════════════════════════════════════════════════════
+const obobState = {
+    results:     [],
+    filtered:    [],
+    sortCol:     'Signal',
+    sortDir:     'asc',
+    filterSignal:'all',
+    filterTf:    'all',
+    search:      '',
+    scanning:    false,
+};
+
+// ── Timeframe chip toggles ──
+document.addEventListener('DOMContentLoaded', () => {
+    $('#obobTfChips')?.addEventListener('click', e => {
+        const btn = e.target.closest('.obob-tf');
+        if (btn) btn.classList.toggle('active');
+    });
+
+    // Signal filter chips
+    $('#obobSignalChips')?.addEventListener('click', e => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        $$('#obobSignalChips .chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        obobState.filterSignal = chip.dataset.filter;
+        obobApplyFilters();
+    });
+
+    // TF dropdown filter
+    $('#obobTfFilter')?.addEventListener('change', function () {
+        obobState.filterTf = this.value;
+        obobApplyFilters();
+    });
+
+    // Search
+    $('#obobSearch')?.addEventListener('input', function () {
+        obobState.search = this.value.trim().toLowerCase();
+        obobApplyFilters();
+    });
+
+    // Sort headers
+    $('#obobTable')?.addEventListener('click', e => {
+        const th = e.target.closest('th.sortable');
+        if (!th) return;
+        const col = th.dataset.col;
+        if (obobState.sortCol === col) obobState.sortDir = obobState.sortDir === 'asc' ? 'desc' : 'asc';
+        else { obobState.sortCol = col; obobState.sortDir = 'asc'; }
+        $$('#obobTable .sort-icon').forEach(i => i.className = 'fas fa-sort sort-icon');
+        th.querySelector('.sort-icon').className = `fas fa-sort-${obobState.sortDir === 'asc' ? 'up' : 'down'} sort-icon`;
+        obobApplyFilters();
+    });
+
+    // Run button
+    $('#obobRunBtn')?.addEventListener('click', obobRunScan);
+
+    // Export
+    $('#obobExportBtn')?.addEventListener('click', obobExport);
+
+    // Load any persisted results on page open
+    obobLoadLatest();
+});
+
+function obobGetConfig() {
+    const tfs = [...$$('#obobTfChips .obob-tf.active')].map(b => b.dataset.tf);
+    return {
+        timeframes:   tfs.length ? tfs : ['15min', '1hr', '4hr'],
+        crypto_count: parseInt($('#obobCryptoCount')?.value || 50),
+        rsi_type:     $('#obobRsiType')?.value || 'ALMA',
+        rsi_length:   parseInt($('#obobRsiLength')?.value || 11),
+        ma_type:      $('#obobMaType')?.value || 'ALMA',
+        ma_length:    parseInt($('#obobMaLength')?.value || 9),
+    };
+}
+
+async function obobRunScan() {
+    if (obobState.scanning) return;
+    const config = obobGetConfig();
+    obobState.scanning = true;
+
+    const btn = $('#obobRunBtn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Scanning…</span>'; }
+
+    const wrap = $('#obobProgressWrap');
+    wrap?.classList.remove('hidden');
+    obobSetProgress(5, 'Fetching top symbols…');
+
+    const steps = [
+        [15, 'Downloading OHLCV data…'],
+        [40, 'Calculating True RSI…'],
+        [62, 'Computing MA of RSI…'],
+        [80, 'Detecting crossovers…'],
+        [93, 'Finalising results…'],
+    ];
+    let si = 0;
+    const timer = setInterval(() => {
+        if (si < steps.length) { const [p, m] = steps[si++]; obobSetProgress(p, m); }
+    }, 3500);
+
+    try {
+        const res = await fetch(`${API_URL}/api/ob-os/scan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+        });
+        clearInterval(timer);
+        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || res.statusText); }
+
+        const data = await res.json();
+        obobSetProgress(100, 'Done!');
+        setTimeout(() => wrap?.classList.add('hidden'), 800);
+        obobHandleResults(data);
+        showToast(`OB/OS scan complete — ${data.ob_count} OB, ${data.os_count} OS`, 'success');
+
+    } catch (e) {
+        clearInterval(timer);
+        wrap?.classList.add('hidden');
+        showToast(`OB/OS scan failed: ${e.message}`, 'error');
+    } finally {
+        obobState.scanning = false;
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-play-circle"></i> <span>Run OB/OS Scan</span>'; }
+    }
+}
+
+function obobSetProgress(pct, msg) {
+    const bar = $('#obobProgressBar'), pctEl = $('#obobProgressPct'), det = $('#obobProgressDetail');
+    if (bar) bar.style.width = pct + '%';
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (det) det.textContent = msg;
+}
+
+function obobHandleResults(data) {
+    obobState.results = data.data || [];
+
+    const grid = $('#obobStatsGrid');
+    if (grid) grid.style.display = 'grid';
+    const el = id => document.getElementById(id);
+    if (el('obobTotal'))    el('obobTotal').textContent    = obobState.results.length;
+    if (el('obobObCount'))  el('obobObCount').textContent  = data.ob_count;
+    if (el('obobOsCount'))  el('obobOsCount').textContent  = data.os_count;
+    if (el('obobScanTime')) el('obobScanTime').textContent = data.scan_time ? data.scan_time.split(' ')[1] : '—';
+    if (el('obobDuration')) el('obobDuration').textContent = data.duration ? `Scan: ${data.duration}s` : '';
+
+    // Rebuild TF filter dropdown
+    const tfs = [...new Set(obobState.results.map(r => r.Timeframe))].sort();
+    const dd = el('obobTfFilter');
+    if (dd) {
+        dd.innerHTML = '<option value="all">All Timeframes</option>';
+        tfs.forEach(tf => { const o = document.createElement('option'); o.value = tf; o.textContent = tf; dd.appendChild(o); });
+    }
+
+    obobApplyFilters();
+}
+
+function obobApplyFilters() {
+    let data = [...obobState.results];
+    if (obobState.filterSignal !== 'all') data = data.filter(r => r.Signal === obobState.filterSignal);
+    if (obobState.filterTf !== 'all')     data = data.filter(r => r.Timeframe === obobState.filterTf);
+    if (obobState.search)                 data = data.filter(r => r.Name.toLowerCase().includes(obobState.search));
+
+    // Sort
+    const col = obobState.sortCol;
+    const asc = obobState.sortDir === 'asc';
+    const numCols = ['RSI', 'MA', 'Gap', 'Change'];
+    data.sort((a, b) => {
+        let av = a[col] ?? '', bv = b[col] ?? '';
+        if (numCols.includes(col)) { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; }
+        if (av < bv) return asc ? -1 : 1;
+        if (av > bv) return asc ?  1 : -1;
+        return 0;
+    });
+
+    obobState.filtered = data;
+    obobRenderTable(data);
+    const cnt = document.getElementById('obobCount');
+    if (cnt) cnt.textContent = `${data.length} result${data.length !== 1 ? 's' : ''}`;
+}
+
+function obobRenderTable(rows) {
+    const tbody = document.getElementById('obobBody');
+    const empty = document.getElementById('obobEmpty');
+    if (!tbody) return;
+
+    if (!rows.length) {
+        tbody.innerHTML = '';
+        if (empty) empty.style.display = 'flex';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    tbody.innerHTML = rows.map(r => {
+        const isOb        = r.Signal === 'OB';
+        const badge       = isOb ? `<span class="obos-signal-ob">OB</span>` : `<span class="obos-signal-os">OS</span>`;
+        const crossLbl    = isOb ? '↘ cross under' : '↗ cross over';
+        const rsiClass    = isOb ? 'obos-rsi-ob' : 'obos-rsi-os';
+        const gapClass    = isOb ? 'obos-gap-ob' : 'obos-gap-os';
+        const gapSign     = r.Gap >= 0 ? '+' : '';
+        const changeClass = r.Change >= 0 ? 'change-positive' : 'change-negative';
+        const changeSign  = r.Change >= 0 ? '+' : '';
+
+        return `<tr>
+            <td><strong>${r.Name}</strong></td>
+            <td>${r.Timeframe}</td>
+            <td>${badge}<span class="obos-cross-lbl">${crossLbl}</span></td>
+            <td><span class="${rsiClass}">${(+r.RSI).toFixed(2)}</span></td>
+            <td><span class="obos-ma-val">${(+r.MA).toFixed(2)}</span><span class="obos-ma-lbl">${r.MA_Type}(${r.MA_Length})</span></td>
+            <td><span class="${gapClass}">${gapSign}${(+r.Gap).toFixed(2)}</span></td>
+            <td class="${changeClass}">${changeSign}${(+r.Change).toFixed(2)}%</td>
+            <td>${r.Price}</td>
+            <td class="obos-cfg">${r.RSI_Type}(${r.RSI_Length})</td>
+        </tr>`;
+    }).join('');
+}
+
+function obobExport() {
+    if (!obobState.filtered.length) return;
+    const headers = ['Name','Timeframe','Signal','RSI','MA','Gap','Change','Price','RSI_Type','RSI_Length','MA_Type','MA_Length'];
+    const rows = obobState.filtered.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([[headers.join(','), ...rows].join('\n')], { type:'text/csv' }));
+    a.download = `obos_scan_${Date.now()}.csv`;
+    a.click();
+}
+
+async function obobLoadLatest() {
+    try {
+        const res = await fetch(`${API_URL}/api/ob-os/results`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.results && data.results.length) {
+            obobHandleResults({ data:data.results, ob_count:data.ob_count, os_count:data.os_count, scan_time:data.scan_time, duration:data.duration });
+        }
+    } catch (_) {}
+}

@@ -3264,3 +3264,76 @@ textarea.journal-input {
 #alertHistoryTable th, #alertHistoryTable td {
     font-size: 0.78rem;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   OB / OS PAGE — Dedicated tab styles
+   ═══════════════════════════════════════════════════════════ */
+
+.obos-logic-box {
+    background: var(--bg-deep);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm, 8px);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.obos-logic-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.83rem;
+    color: var(--text-secondary);
+}
+.obos-logic-row strong { color: var(--text-primary); }
+.obos-badge {
+    display: inline-flex;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+}
+.obos-badge.ob {
+    background: rgba(255, 71, 87, 0.15);
+    color: var(--red);
+    border: 1px solid rgba(255, 71, 87, 0.3);
+}
+.obos-badge.os {
+    background: rgba(0, 229, 255, 0.12);
+    color: var(--cyan);
+    border: 1px solid rgba(0, 229, 255, 0.3);
+}
+
+.obos-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+@media (max-width: 900px) { .obos-stats-grid { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 500px)  { .obos-stats-grid { grid-template-columns: 1fr; } }
+
+.obos-signal-ob {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 700;
+    background: rgba(255,71,87,.15); color: var(--red);
+    border: 1px solid rgba(255,71,87,.3);
+}
+.obos-signal-os {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 700;
+    background: rgba(0,229,255,.12); color: var(--cyan);
+    border: 1px solid rgba(0,229,255,.3);
+}
+.obos-cross-lbl { display:block; font-size:.67rem; color:var(--text-muted); margin-top:2px; }
+.obos-rsi-ob  { color:var(--red);  font-family:var(--font-mono); font-weight:600; }
+.obos-rsi-os  { color:var(--cyan); font-family:var(--font-mono); font-weight:600; }
+.obos-ma-val  { font-family:var(--font-mono); font-weight:500; color:var(--text-primary); }
+.obos-ma-lbl  { display:block; font-size:.67rem; color:var(--text-muted); margin-top:1px; }
+.obos-gap-ob  { color:var(--red);  font-family:var(--font-mono); font-size:.82rem; }
+.obos-gap-os  { color:var(--cyan); font-family:var(--font-mono); font-size:.82rem; }
+.obos-cfg     { font-family:var(--font-mono); font-size:.72rem; color:var(--text-muted); }

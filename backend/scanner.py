@@ -2074,36 +2074,30 @@ def apply_adaptive_htf_cross_scanner(df, scanner_mode='cross_up', tf_input='15mi
 
 def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **kwargs):
     """
-    HILEGA OB/OS Scanner — HILEGA HTF-ALMA Crossover Signals (Qwen Mobile Section 17)
+    HILEGA OB/OS Scanner — HILEGA HTF-ALMA Crossover Signals (HILEGA HTF ALMA.txt)
 
-    Matches Pine Script lines 898-918 exactly:
+    Uses CURRENT TIMEFRAME data with ADAPTIVE indicator lengths based on HTF:
 
-      Higher TF mapping (Qwen Mobile hilega_higherTFMinutes):
-        <=5→60, <=15→240, <=30→1440, <=60→4320, <=240→10080, <=2880→43200, <=10080→525600
+      Higher TF mapping (HILEGA HTF ALMA Pine Script):
+        <=5→60, <=15→240, <=30→1440, <=60→10080, <=240→10080, <=2880→43200
 
       Parameters (adaptMult = 1.0, Medium sensitivity):
-        _htf_rsi_len  = clamp(round(9 + log10(higherTFMinutes+1) * 7  * 1.0), 7, 35)
-        _htf_alma_len = clamp(round(8 + log10(higherTFMinutes+1) * 6  * 1.0), 6, 100)
-        _htf_rsx      = TrueRSI(close, _htf_rsi_len)          ← ALMA-smoothed (sigma=5)
-        _htf_alma     = ALMA(_htf_rsx, _htf_alma_len, 0.85, 6.0)
-
-      Cross Angle Filter:
-        angle = degrees(arctan(diff_curr - diff_prev)) at crossover candle
-        Signal only fires when min_angle ≤ |angle| ≤ max_angle
+        rsi_len  = clamp(round(9 + log10(higherTFMinutes+1) * 7  * 1.0), 7, 35)
+        alma_len = clamp(round(8 + log10(higherTFMinutes+1) * 6  * 1.0), 6, 100)
+        _rsx     = TrueRSI(close, rsi_len)  ← Calculated on CURRENT TF close!
+        _alma    = ALMA(_rsx, alma_len, 0.85, 6.0)
 
       Signal conditions:
-        HILEGA OB = crossunder(_htf_rsx, _htf_alma) AND (rsx - alma < -1) AND bearish candle
-        HILEGA OS = crossover(_htf_rsx,  _htf_alma) AND (rsx - alma >  1) AND bullish candle
-
-      Valid TF: hilega_validTF = tfMins <= 4320
+        HILEGA OB = crossover(_rsx, _alma) AND (rsx - alma > 1) AND bullish candle
+        HILEGA OS = crossunder(_rsx,  _alma) AND (rsx - alma < -1) AND bearish candle
 
     Returns:
     - state:     'OB', 'OS', or None
-    - rsx_val:   Current _htf_rsx (TrueRSI) value
-    - alma_val:  Current _htf_alma value
+    - rsx_val:   Current _rsx (TrueRSI) value
+    - alma_val:  Current _alma value
     - diff_val:  rsx - alma difference
     - candle_status: 'Confirmed' or 'Forming'
-    - angle:     Cross angle in degrees (absolute value used for filtering)
+    - angle:     Cross angle in degrees
     """
     if len(df) < 100:
         return None, None, None, None, None, None
@@ -2111,7 +2105,7 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
     close  = df['close']
     open_  = df['open']
 
-    # ── Parse current TF to minutes ──────────────────────────────────────────
+    # Parse current TF to minutes
     tf_clean = tf_input.lower().strip()
     if 'min' in tf_clean:
         try: tf_minutes = int(tf_clean.replace('min', ''))
@@ -2126,29 +2120,18 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
     elif 'month' in tf_clean: tf_minutes = 43200
     else: tf_minutes = 15
 
-    # ── Valid TF gate (Pine Script: hilega_validTF = tfMins <= 4320) ─────────
+    # Valid TF gate
     if tf_minutes > 4320:
-        logging.info(f"  OB/OS Scanner | TF={tf_input} ({tf_minutes}min) > 4320 — skipped (validTF=False)")
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
-    # ── Higher TF step-function (Qwen Mobile Pine Script line 895) ───────────
+    # Higher TF step-function (HILEGA HTF ALMA Pine Script)
     if   tf_minutes <= 5:     higher_tf_minutes = 60      # 1H
     elif tf_minutes <= 15:    higher_tf_minutes = 240     # 4H
     elif tf_minutes <= 30:    higher_tf_minutes = 1440    # 1D
-    elif tf_minutes <= 60:    higher_tf_minutes = 4320    # 3D
+    elif tf_minutes <= 60:    higher_tf_minutes = 10080   # 1W
     elif tf_minutes <= 240:   higher_tf_minutes = 10080   # 1W
     elif tf_minutes <= 2880:  higher_tf_minutes = 43200   # 1M
-    elif tf_minutes <= 10080: higher_tf_minutes = 525600  # ~1Y
-    else:                     higher_tf_minutes = 525600
-
-    # ── HTF display label ────────────────────────────────────────────────────
-    if   higher_tf_minutes >= 525600: htf_display = "~1 Year"
-    elif higher_tf_minutes >=  43200: htf_display = "1 Month"
-    elif higher_tf_minutes >=  10080: htf_display = "1 Week"
-    elif higher_tf_minutes >=   4320: htf_display = "3 Days"
-    elif higher_tf_minutes >=   1440: htf_display = "1 Day"
-    elif higher_tf_minutes >=    240: htf_display = "4 Hour"
-    else:                             htf_display = "1 Hour"
+    else:                     higher_tf_minutes = 525600  # ~1Y
 
     # ── Adaptive lengths (adaptMult = 1.0, Medium — Pine Script line 905) ────
     adapt_mult  = 1.0
@@ -2187,12 +2170,18 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
 
         diff      = rsx_curr - alma_curr
         prev_diff = rsx_prev - alma_prev
-        # Cross angle: steepness of RSI relative to ALMA at the crossover candle.
-        # Uses per-bar slope difference so the result spans 0–90° meaningfully:
-        #   ~6° = very shallow cross, ~27° = gentle, ~45° = moderate, ~79° = steep.
+        # Cross angle: the visual angle between RSI and ALMA lines at crossover
+        # Calculate individual line angles relative to horizontal, then the difference
         rsx_slope  = rsx_curr  - rsx_prev
         alma_slope = alma_curr - alma_prev
-        cross_angle = abs(np.degrees(np.arctan(rsx_slope - alma_slope)))
+
+        # Angle each line makes with horizontal
+        angle_rsi = np.degrees(np.arctan(rsx_slope))
+        angle_alma = np.degrees(np.arctan(alma_slope))
+
+        # Crossing angle: difference between their slopes
+        # Positive when RSI is steeper upward (crossover/OS), negative when steeper downward (crossunder/OB)
+        cross_angle = angle_rsi - angle_alma
 
         is_bullish = close.iloc[idx] > open_.iloc[idx]
         is_bearish = close.iloc[idx] < open_.iloc[idx]
@@ -2204,7 +2193,7 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
 
         angle_ok = min_angle <= cross_angle <= max_angle
 
-        # hilega_alma_buy  → HILEGA OS (oversold reversal — buy)
+        # HILEGA OS (oversold reversal — buy) when RSI crosses ABOVE ALMA → RSI > ALMA
         if cross_up and diff > 1 and is_bullish and angle_ok:
             state         = 'OS'
             candle_status = label
@@ -2214,7 +2203,7 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
             angle_val     = cross_angle
             break
 
-        # hilega_alma_sell → HILEGA OB (overbought reversal — sell)
+        # HILEGA OB (overbought reversal — sell) when RSI crosses BELOW ALMA → RSI < ALMA
         if cross_down and diff < -1 and is_bearish and angle_ok:
             state         = 'OB'
             candle_status = label
@@ -2223,6 +2212,15 @@ def apply_ob_os_scanner(df, tf_input='15min', min_angle=5.0, max_angle=85.0, **k
             diff_val      = diff
             angle_val     = cross_angle
             break
+
+    # HTF display label
+    if   higher_tf_minutes >= 525600: htf_display = "~1 Year"
+    elif higher_tf_minutes >=  43200: htf_display = "1 Month"
+    elif higher_tf_minutes >=  10080: htf_display = "1 Week"
+    elif higher_tf_minutes >=   4320: htf_display = "3 Days"
+    elif higher_tf_minutes >=   1440: htf_display = "1 Day"
+    elif higher_tf_minutes >=    240: htf_display = "4 Hour"
+    else:                             htf_display = "1 Hour"
 
     logging.info(
         f"  OB/OS Scanner | TF={tf_input} ({tf_minutes}min) | "
@@ -2826,9 +2824,9 @@ async def scan_single_symbol(symbol, timeframes, kwargs, results_list, semaphore
                     if len(df) >= 100:
                         state, rsx_val, alma_val, diff_val, ob_candle_status, ob_angle = await loop.run_in_executor(
                             executor,
-                            lambda tf=tf: apply_ob_os_scanner(
+                            lambda tf_param=tf: apply_ob_os_scanner(
                                 df.copy(),
-                                tf_input=tf,
+                                tf_input=tf_param,
                                 min_angle=hilega_min_angle,
                                 max_angle=hilega_max_angle
                             )
@@ -3018,7 +3016,18 @@ async def run_scan(indices, timeframes, log_file, **kwargs):
         batch = top_coins[i:i + batch_size]
         tasks = []
         for coin in batch:
-            change_val = coin.get('change', 0)
+            # Calculate intraday change from 1D open to current close
+            try:
+                df_daily = await fetch_binance_data(coin['symbol'], '1 day')
+                if df_daily is not None and len(df_daily) >= 1:
+                    today_open = df_daily.iloc[-1]['open']
+                    current_close = df_daily.iloc[-1]['close']
+                    change_val = ((current_close - today_open) / today_open) * 100 if today_open != 0 else 0
+                else:
+                    change_val = 0
+            except:
+                change_val = 0
+
             if change_val is None:
                 change_val = 0
             change_str = f"{float(change_val):+.2f}%"
