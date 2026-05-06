@@ -13,6 +13,13 @@ import asyncio
 import logging
 from typing import List, Optional
 
+# ── Reuse the exact HILEGA indicator functions from scanner.py ──
+from scanner import (
+    calculate_true_rsi_alma,   # True RSI with ALMA smoothing (sigma=5, offset=0.85)
+    calculate_alma,            # ALMA MA (sigma=6, offset=0.85) — applied to the RSI series
+    calculate_tema_of_series,  # TEMA of a series (used as MA of RSI)
+)
+
 # ── Shared exchange instance (reuse from scanner if already alive) ──
 _exchange = None
 
@@ -50,51 +57,25 @@ TF_MAP = {
 # =============================================================================
 # INDICATOR FUNCTIONS
 # =============================================================================
+# All indicator functions are imported from scanner.py (the canonical HILEGA
+# implementation) so there is a single source of truth.
+#
+#   calculate_true_rsi_alma(close, length)  — True RSI, ALMA sigma=5  (HILEGA ALMA)
+#   calculate_alma(series, length)          — ALMA MA, sigma=6, offset=0.85
+#   calculate_tema_of_series(series, length)— TEMA of a series
+#
+# Standard Wilder RSI (fallback when user selects "Standard"):
 
 def _rsi_standard(close: pd.Series, length: int = 14) -> pd.Series:
-    """Wilder's RSI (standard)."""
+    """Wilder's RSI (RMA smoothing) — standard / non-True RSI."""
     delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+    gain = pd.Series(np.where(delta > 0, delta, 0), index=close.index)
+    loss = pd.Series(np.where(delta < 0, -delta, 0), index=close.index)
     avg_gain = gain.ewm(alpha=1 / length, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1 / length, adjust=False).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
-
-
-def _alma(series: pd.Series, length: int, offset: float = 0.85, sigma: float = 6.0) -> pd.Series:
-    """Arnaud Legoux Moving Average."""
-    values = series.values
-    m = offset * (length - 1)
-    s = length / sigma
-    weights = np.array([np.exp(-((i - m) ** 2) / (2 * s * s)) for i in range(length)])
-    result = np.full(len(values), np.nan)
-    for i in range(length - 1, len(values)):
-        window = values[i - length + 1:i + 1]
-        mask = ~np.isnan(window)
-        if mask.any():
-            w = weights[mask]
-            result[i] = np.sum(window[mask] * w) / np.sum(w)
-    return pd.Series(result, index=series.index)
-
-
-def _rsi_alma(close: pd.Series, length: int = 11) -> pd.Series:
-    """True RSI with ALMA smoothing (HILEGA-style)."""
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = _alma(gain, length)
-    avg_loss = _alma(loss, length)
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
-
-
-def _tema(series: pd.Series, length: int) -> pd.Series:
-    """Triple Exponential Moving Average of a series."""
-    ema1 = series.ewm(span=length, adjust=False).mean()
-    ema2 = ema1.ewm(span=length, adjust=False).mean()
-    ema3 = ema2.ewm(span=length, adjust=False).mean()
-    return 3 * ema1 - 3 * ema2 + ema3
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.fillna(50)
 
 
 # =============================================================================
@@ -163,17 +144,17 @@ async def _scan_symbol(symbol: str, timeframes: List[str],
                 # Drop forming (incomplete) candle — use only closed bars
                 closed = df.iloc[:-1]
 
-                # ── True RSI ──
+                # ── True RSI (exact HILEGA ALMA: sigma=5, offset=0.85) ──
                 if rsi_type == 'ALMA':
-                    rsi_series = _rsi_alma(closed['close'], length=rsi_length)
+                    rsi_series = calculate_true_rsi_alma(closed['close'], length=rsi_length)
                 else:
                     rsi_series = _rsi_standard(closed['close'], length=rsi_length)
 
-                # ── MA of the True RSI ──
+                # ── MA of the True RSI (ALMA sigma=6 or TEMA) ──
                 if ma_type == 'TEMA':
-                    ma_series = _tema(rsi_series, length=ma_length)
+                    ma_series = calculate_tema_of_series(rsi_series, length=ma_length)
                 else:  # default ALMA
-                    ma_series = _alma(rsi_series, length=ma_length)
+                    ma_series = calculate_alma(rsi_series, length=ma_length)
 
                 # Need at least 2 valid values for crossover detection
                 if len(rsi_series) < 2 or len(ma_series) < 2:
