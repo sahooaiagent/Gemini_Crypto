@@ -38,7 +38,8 @@
 
     /* Sizes */
     --sidebar-w: 260px;
-    --ticker-h: 38px;
+    --ticker-h: 76px;   /* 2 tape lines × 38px each */
+    --ticker-h1: 38px;
     --radius: 12px;
     --radius-sm: 8px;
     --radius-xs: 6px;
@@ -151,7 +152,8 @@
     display: none; /* Hide animated background in light mode */
 }
 
-[data-theme="light"] .ticker-tape {
+[data-theme="light"] .ticker-tape,
+[data-theme="light"] .ticker-tape-gl {
     background: linear-gradient(90deg,
         rgba(255, 255, 255, 0.95) 0%,
         rgba(248, 250, 252, 0.95) 50%,
@@ -435,14 +437,15 @@ body {
 /* ══════════════════════════════════════════════════════════════
    TICKER TAPE
    ══════════════════════════════════════════════════════════════ */
+/* ── Tape 1 — all coins ── */
 .ticker-tape {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     z-index: 100;
-    height: var(--ticker-h);
-    background: rgba(6, 10, 19, 0.85);
+    height: var(--ticker-h1);
+    background: rgba(6, 10, 19, 0.88);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--glass-border);
@@ -478,22 +481,105 @@ body {
     font-family: var(--font-mono);
 }
 
-.ticker-item .change-up {
-    color: var(--green);
-}
-
-.ticker-item .change-down {
-    color: var(--red);
-}
+.ticker-item .change-up   { color: var(--green); }
+.ticker-item .change-down { color: var(--red); }
 
 @keyframes tickerScroll {
-    0% {
-        transform: translateX(0);
-    }
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+}
 
-    100% {
-        transform: translateX(-50%);
-    }
+/* ── Tape 2 — Gainers / Losers ── */
+.ticker-tape-gl {
+    position: fixed;
+    top: var(--ticker-h1);
+    left: 0;
+    right: 0;
+    z-index: 99;
+    height: var(--ticker-h1);
+    background: rgba(4, 8, 16, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+}
+
+.ticker-track-gl {
+    display: flex;
+    gap: 40px;
+    white-space: nowrap;
+    /* scrolls right→left same direction but at a different speed */
+    animation: tickerScrollGL var(--ticker-speed-gl, 55s) linear infinite;
+    padding-left: 100%;
+}
+
+@keyframes tickerScrollGL {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+}
+
+/* Section label pills inside tape 2 */
+.gl-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 11px;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+.gl-label.gainer {
+    background: rgba(38,222,129,0.18);
+    color: #26de81;
+    border: 1px solid rgba(38,222,129,0.35);
+}
+.gl-label.loser {
+    background: rgba(255,71,87,0.18);
+    color: #ff4757;
+    border: 1px solid rgba(255,71,87,0.35);
+}
+
+/* Divider between gainers and losers */
+.gl-divider {
+    width: 1px;
+    height: 18px;
+    background: rgba(255,255,255,0.12);
+    margin: 0 16px;
+    flex-shrink: 0;
+}
+
+/* Gainer/loser ticker items */
+.gl-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+.gl-item .gl-name {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.gl-item .gl-price {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+.gl-item .gl-chg-up {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: #26de81;
+}
+.gl-item .gl-chg-down {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: #ff4757;
 }
 
 /* ══════════════════════════════════════════════════════════════

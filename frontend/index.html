@@ -13,7 +13,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="styles.css?v=12">
+    <link rel="stylesheet" href="styles.css?v=13">
     <link rel="stylesheet" href="modern-config.css?v=1">
     <script>
         // Restore persisted theme BEFORE paint (avoid flash).
@@ -38,10 +38,19 @@
     </div>
 
     <!-- ════════════════════════════════════════════════════════════════════
-     MARKET TICKER TAPE
+     MARKET TICKER TAPE — Line 1 (all coins, alphabetical)
      ════════════════════════════════════════════════════════════════════ -->
     <div class="ticker-tape" id="tickerTape">
         <div class="ticker-track" id="tickerTrack">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+     GAINERS / LOSERS TAPE — Line 2
+     ════════════════════════════════════════════════════════════════════ -->
+    <div class="ticker-tape ticker-tape-gl" id="glTape">
+        <div class="ticker-track ticker-track-gl" id="glTrack">
             <!-- Populated by JS -->
         </div>
     </div>
@@ -1758,7 +1767,7 @@
      ════════════════════════════════════════════════════════════════════ -->
     <div id="toastContainer"></div>
 
-    <script src="app.js?v=35"></script>
+    <script src="app.js?v=36"></script>
 </body>
 
 </html>
