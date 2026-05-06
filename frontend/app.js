@@ -109,6 +109,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Clock-aligned 15-minute refresh (fires at :00, :15, :30, :45)
     scheduleAlignedSetupRefresh();
+
+    // OB/OS Scanner
+    initObOs();
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -3249,56 +3252,60 @@ const obobState = {
     scanning:    false,
 };
 
-// ── Timeframe chip toggles ──
-document.addEventListener('DOMContentLoaded', () => {
-    $('#obobTfChips')?.addEventListener('click', e => {
-        const btn = e.target.closest('.obob-tf');
-        if (btn) btn.classList.toggle('active');
+function initObOs() {
+    // ── TF chip toggles — direct per-button listeners ──
+    $$('#obobTfChips .obob-tf').forEach(btn => {
+        btn.addEventListener('click', () => btn.classList.toggle('active'));
     });
 
-    // Signal filter chips
-    $('#obobSignalChips')?.addEventListener('click', e => {
-        const chip = e.target.closest('.chip');
-        if (!chip) return;
-        $$('#obobSignalChips .chip').forEach(c => c.classList.remove('active'));
-        chip.classList.add('active');
-        obobState.filterSignal = chip.dataset.filter;
-        obobApplyFilters();
+    // ── Signal filter chips ──
+    $$('#obobSignalChips .chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            $$('#obobSignalChips .chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            obobState.filterSignal = chip.dataset.filter;
+            obobApplyFilters();
+        });
     });
 
-    // TF dropdown filter
-    $('#obobTfFilter')?.addEventListener('change', function () {
+    // ── TF dropdown ──
+    const tfDd = document.getElementById('obobTfFilter');
+    if (tfDd) tfDd.addEventListener('change', function () {
         obobState.filterTf = this.value;
         obobApplyFilters();
     });
 
-    // Search
-    $('#obobSearch')?.addEventListener('input', function () {
+    // ── Search ──
+    const searchEl = document.getElementById('obobSearch');
+    if (searchEl) searchEl.addEventListener('input', function () {
         obobState.search = this.value.trim().toLowerCase();
         obobApplyFilters();
     });
 
-    // Sort headers
-    $('#obobTable')?.addEventListener('click', e => {
+    // ── Sort headers ──
+    const tbl = document.getElementById('obobTable');
+    if (tbl) tbl.addEventListener('click', e => {
         const th = e.target.closest('th.sortable');
         if (!th) return;
         const col = th.dataset.col;
         if (obobState.sortCol === col) obobState.sortDir = obobState.sortDir === 'asc' ? 'desc' : 'asc';
         else { obobState.sortCol = col; obobState.sortDir = 'asc'; }
-        $$('#obobTable .sort-icon').forEach(i => i.className = 'fas fa-sort sort-icon');
+        tbl.querySelectorAll('.sort-icon').forEach(i => i.className = 'fas fa-sort sort-icon');
         th.querySelector('.sort-icon').className = `fas fa-sort-${obobState.sortDir === 'asc' ? 'up' : 'down'} sort-icon`;
         obobApplyFilters();
     });
 
-    // Run button
-    $('#obobRunBtn')?.addEventListener('click', obobRunScan);
+    // ── Run button ──
+    const runBtn = document.getElementById('obobRunBtn');
+    if (runBtn) runBtn.addEventListener('click', obobRunScan);
 
-    // Export
-    $('#obobExportBtn')?.addEventListener('click', obobExport);
+    // ── Export ──
+    const expBtn = document.getElementById('obobExportBtn');
+    if (expBtn) expBtn.addEventListener('click', obobExport);
 
-    // Load any persisted results on page open
+    // ── Load last results ──
     obobLoadLatest();
-});
+}
 
 function obobGetConfig() {
     const tfs = [...$$('#obobTfChips .obob-tf.active')].map(b => b.dataset.tf);
