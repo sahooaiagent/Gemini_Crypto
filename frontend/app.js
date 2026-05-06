@@ -3435,25 +3435,37 @@ function obobRenderTable(rows) {
     if (empty) empty.style.display = 'none';
 
     tbody.innerHTML = rows.map(r => {
-        const isOb        = r.Signal === 'OB';
-        const badge       = isOb ? `<span class="obos-signal-ob">OB</span>` : `<span class="obos-signal-os">OS</span>`;
-        const crossLbl    = isOb ? '↘ cross under' : '↗ cross over';
+        const isOb = r.Signal === 'OB';
+
+        // Signal pill with icon
+        const badge = isOb
+            ? `<span class="obos-signal-ob"><i class="fas fa-arrow-trend-down"></i> OB</span>`
+            : `<span class="obos-signal-os"><i class="fas fa-arrow-trend-up"></i> OS</span>`;
+
+        // Cross-direction label
+        const crossLbl = isOb
+            ? `<span class="obos-cross-lbl down"><i class="fas fa-angles-down"></i> Crossunder</span>`
+            : `<span class="obos-cross-lbl up"><i class="fas fa-angles-up"></i> Crossover</span>`;
+
         const rsiClass    = isOb ? 'obos-rsi-ob' : 'obos-rsi-os';
         const gapClass    = isOb ? 'obos-gap-ob' : 'obos-gap-os';
         const gapSign     = r.Gap >= 0 ? '+' : '';
         const changeClass = r.Change >= 0 ? 'change-positive' : 'change-negative';
         const changeSign  = r.Change >= 0 ? '+' : '';
 
-        return `<tr>
-            <td><strong>${r.Name}</strong></td>
-            <td>${r.Timeframe}</td>
-            <td>${badge}<span class="obos-cross-lbl">${crossLbl}</span></td>
+        return `<tr data-signal="${r.Signal}">
+            <td>
+                <span class="obos-asset-name">${r.Name}</span>
+                <span class="obos-asset-sym">${r.Symbol}</span>
+            </td>
+            <td><span class="obos-tf-pill">${r.Timeframe}</span></td>
+            <td>${badge}${crossLbl}</td>
             <td><span class="${rsiClass}">${(+r.RSI).toFixed(2)}</span></td>
             <td><span class="obos-ma-val">${(+r.MA).toFixed(2)}</span><span class="obos-ma-lbl">${r.MA_Type}(${r.MA_Length})</span></td>
             <td><span class="${gapClass}">${gapSign}${(+r.Gap).toFixed(2)}</span></td>
             <td class="${changeClass}">${changeSign}${(+r.Change).toFixed(2)}%</td>
-            <td>${r.Price}</td>
-            <td class="obos-cfg">${r.RSI_Type}(${r.RSI_Length})</td>
+            <td style="font-family:var(--font-mono);font-size:0.83rem">${r.Price}</td>
+            <td><span class="obos-cfg">${r.RSI_Type}(${r.RSI_Length})</span></td>
         </tr>`;
     }).join('');
 }
