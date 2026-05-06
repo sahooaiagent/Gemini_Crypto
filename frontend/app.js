@@ -244,50 +244,58 @@ async function fetchMarketData() {
         if (res.ok) {
             const data = await res.json();
             if (data.indices) {
-                const all = data.indices.filter(
-                    item => !item.name || !item.name.toUpperCase().includes('USDC')
-                );
-                // Tape 1 — alphabetical top 20
-                CRYPTO_TICKERS = [...all]
+                CRYPTO_TICKERS = data.indices
+                    .filter(item => !item.name || !item.name.toUpperCase().includes('USDC'))
                     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                     .slice(0, 20);
                 renderTickerTape();
-                // Tape 2 — top 10 gainers + top 10 losers from full set
-                renderGainersTape(all);
                 updatePerformanceStatus();
             }
         }
     } catch (e) {
         console.error("Failed to fetch market data:", e);
     }
+    // Fetch gainers/losers separately (top 500 perp universe)
+    fetchGainersLosers();
 }
 
-function renderGainersTape(all) {
+async function fetchGainersLosers() {
+    try {
+        const res = await fetch(`${API_URL}/api/gainers-losers`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.gainers || data.losers) {
+            renderGainersTape(data.gainers || [], data.losers || [], data.pool || 0);
+        }
+    } catch (e) {
+        console.error("Failed to fetch gainers/losers:", e);
+    }
+}
+
+function renderGainersTape(gainers, losers, pool) {
     const track = document.getElementById('glTrack');
-    if (!track || !all || !all.length) return;
+    if (!track) return;
 
-    const sorted = [...all]
-        .filter(t => t.change != null && !isNaN(parseFloat(t.change)))
-        .sort((a, b) => parseFloat(b.change) - parseFloat(a.change));
-
-    const gainers = sorted.slice(0, 10);
-    const losers  = sorted.slice(-10).reverse();   // worst 10, worst-first
+    if (!gainers.length && !losers.length) {
+        track.innerHTML = '<span class="gl-item"><span class="gl-name">Loading gainers/losers…</span></span>';
+        return;
+    }
 
     const fmtItem = (t, isGainer) => {
-        const chg     = parseFloat(t.change) || 0;
-        const arrow   = isGainer ? '▲' : '▼';
-        const chgCls  = isGainer ? 'gl-chg-up' : 'gl-chg-down';
-        const priceStr = t.price ? `$${t.price}` : '';
+        const chg    = parseFloat(t.change) || 0;
+        const arrow  = isGainer ? '▲' : '▼';
+        const chgCls = isGainer ? 'gl-chg-up' : 'gl-chg-down';
         return `<span class="gl-item">
             <span class="gl-name">${t.name}</span>
-            ${priceStr ? `<span class="gl-price">${priceStr}</span>` : ''}
+            <span class="gl-price">$${t.price}</span>
             <span class="${chgCls}">${arrow} ${Math.abs(chg).toFixed(2)}%</span>
         </span>`;
     };
 
-    const gainLabel  = `<span class="gl-label gainer"><i class="fas fa-rocket"></i> TOP GAINERS</span>`;
-    const lossLabel  = `<span class="gl-label loser"><i class="fas fa-arrow-trend-down"></i> TOP LOSERS</span>`;
-    const divider    = `<span class="gl-divider"></span>`;
+    const poolTxt   = pool ? ` <span style="opacity:.5;font-size:.65rem">top ${pool} perp</span>` : '';
+    const gainLabel = `<span class="gl-label gainer"><i class="fas fa-rocket"></i> TOP GAINERS${poolTxt}</span>`;
+    const lossLabel = `<span class="gl-label loser"><i class="fas fa-arrow-trend-down"></i> TOP LOSERS</span>`;
+    const divider   = `<span class="gl-divider"></span>`;
 
     const segment = gainLabel
         + gainers.map(t => fmtItem(t, true)).join('')

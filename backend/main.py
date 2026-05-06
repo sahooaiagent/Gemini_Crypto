@@ -1050,6 +1050,59 @@ async def get_market_data():
         logging.error(f"Market data error: {e}")
         return {"indices": []}
 
+@app.get("/api/gainers-losers")
+async def get_gainers_losers():
+    """
+    Top 10 gainers and top 10 losers from the top 500 Binance USDT-Margined
+    Perpetual contracts, ranked by 24h quote volume.
+    Uses the swap exchange instance already configured in scanner.py.
+    """
+    try:
+        tickers = await scanner.exchange.fetch_tickers()
+
+        STABLE = {'USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'FDUSD', 'USDP', 'GUSD', 'FRAX'}
+
+        rows = []
+        for sym, t in tickers.items():
+            # Only USDT-margined perpetuals: symbol ends with /USDT:USDT
+            if not sym.endswith('/USDT:USDT'):
+                continue
+            base = sym.replace('/USDT:USDT', '')
+            if base in STABLE:
+                continue
+            vol   = t.get('quoteVolume') or 0
+            chg   = t.get('percentage')      # 24h % change
+            price = t.get('last')
+            if chg is None or price is None:
+                continue
+            rows.append({'name': base, 'price': price, 'change': chg, 'volume': vol})
+
+        # Take top 500 by 24h volume, then rank by % change
+        top500 = sorted(rows, key=lambda x: x['volume'], reverse=True)[:500]
+        ranked = sorted(top500, key=lambda x: x['change'], reverse=True)
+
+        def fmt(coin):
+            p = coin['price']
+            if   p >= 1000: ps = f"{p:,.2f}"
+            elif p >= 1:    ps = f"{p:.4f}"
+            elif p >= 0.01: ps = f"{p:.4f}"
+            else:           ps = f"{p:.6f}"
+            return {'name': coin['name'], 'price': ps,
+                    'change': round(coin['change'], 2)}
+
+        gainers = [fmt(c) for c in ranked[:10]]
+        losers  = [fmt(c) for c in ranked[-10:][::-1]]   # worst first
+
+        logging.info(f"Gainers/Losers | pool={len(top500)} | "
+                     f"top={gainers[0]['name']}+{gainers[0]['change']}% "
+                     f"bot={losers[0]['name']}{losers[0]['change']}%")
+        return {'gainers': gainers, 'losers': losers, 'pool': len(top500)}
+
+    except Exception as e:
+        logging.error(f"Gainers/Losers error: {e}")
+        return {'gainers': [], 'losers': [], 'pool': 0}
+
+
 @app.get("/api/status")
 def get_status():
     """Return current API status"""
