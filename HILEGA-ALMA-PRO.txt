@@ -1,9 +1,10 @@
 // This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © sahooss - HILEGA-ALMA PRO (60%+ Accuracy Improvement)
 // Multi-timeframe confirmation + Price action + S/R proximity + Trend strength + Risk/Reward validation
+// Optimized for BTCUSDT.P on 1H chart (also works on 4H)
 
 //@version=6
-indicator("HILEGA-ALMA PRO (60%+ Accuracy)", overlay=false, max_bars_back=500, scale=scale.right)
+indicator("HILEGA-ALMA PRO | BTC 1H Optimized", overlay=false, max_bars_back=500, scale=scale.right)
 
 // ─────── TRUE RSI FOR RENKO ───────
 TrueRSI(src, length) =>
@@ -36,9 +37,9 @@ lenRSI   = input.int(11, "RSI Length")
 lenVWMA  = input.int(21, "VWMA Period")
 kama_len = input.int(10, "KAMA Length")
 lookback = input.int(100, "Dynamic Level Lookback")
-vol_mult = input.float(1.5, "Volume Filter Multiplier")
-adx_threshold = input.int(25, "ADX Trend Strength (15-40)", minval=15, maxval=40)
-sr_proximity = input.int(20, "S/R Proximity Bars", minval=10, maxval=50)
+vol_mult = input.float(1.3, "Volume Filter Multiplier")        // BTC: 1.3 (1H), generic: 1.5
+adx_threshold = input.int(20, "ADX Trend Strength (15-40)", minval=15, maxval=40)  // BTC: 20 (1H), generic: 25
+sr_proximity = input.int(15, "S/R Proximity Bars", minval=10, maxval=50)           // BTC: 15 (1H), generic: 20
 
 // ─────── CALCULATIONS ───────
 rsx     = TrueRSI(close, lenRSI)

@@ -1,9 +1,10 @@
 // This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
 // © sahooss - HILEGA HTF PRO (60%+ Accuracy Improvement)
 // Multi-timeframe confirmation + Price action + S/R proximity + Trend strength + Risk/Reward validation
+// Optimized for BTCUSDT.P on 1H chart (also works on 4H)
 
 //@version=6
-indicator("HILEGA HTF PRO (60%+ Accuracy)", overlay = false, max_bars_back = 500, scale = scale.right)
+indicator("HILEGA HTF PRO | BTC 1H Optimized", overlay = false, max_bars_back = 500, scale = scale.right)
 
 // ─────── TRUE RSI FOR RENKO ───────
 TrueRSI(src, length) =>
@@ -39,9 +40,9 @@ int kama_len = input.int(10, "KAMA Length",  minval = 3,  maxval = 100, group = 
 
 var string filterGroup = "🔍 60%+ Accuracy Filters"
 int lookback = input.int(100, "Dynamic Level Lookback", group = filterGroup)
-float vol_mult = input.float(1.5, "Volume Filter Multiplier", group = filterGroup)
-int adx_threshold = input.int(25, "ADX Trend Strength", minval=15, maxval=40, group = filterGroup)
-int sr_proximity = input.int(20, "S/R Proximity Bars", minval=10, maxval=50, group = filterGroup)
+float vol_mult = input.float(1.3, "Volume Filter Multiplier", group = filterGroup)           // BTC: 1.3 (1H), generic: 1.5
+int adx_threshold = input.int(20, "ADX Trend Strength", minval=15, maxval=40, group = filterGroup)  // BTC: 20 (1H), generic: 25
+int sr_proximity = input.int(15, "S/R Proximity Bars", minval=10, maxval=50, group = filterGroup)   // BTC: 15 (1H), generic: 20
 
 // ─────── PRE-COMPUTED RSI VALUES ───────
 rsi_5  = TrueRSI(close, 5)
