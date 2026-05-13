@@ -1,0 +1,291 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © sahooss - Enhanced HTF Version with Dynamic Levels, KAMA, Histogram, Volume Filter & HTF Bias
+
+//@version=6
+indicator("HILEGA Adaptive HTF Enhanced", overlay = false, max_bars_back = 500, scale = scale.right)
+
+// ────────────────────────────────────────────────
+//  TRUE RSI FOR RENKO
+// ────────────────────────────────────────────────
+TrueRSI(src, length) =>
+    up   = src - src[1] > 0 ? src - src[1] : 0.0
+    down = src - src[1] < 0 ? -(src - src[1]) : 0.0
+    maUp   = ta.rma(up, length)
+    maDown = ta.rma(down, length)
+    100 - (100 / (1 + maUp / maDown))
+
+// ────────────────────────────────────────────────
+//  KAMA (Kaufman Adaptive Moving Average)
+// ────────────────────────────────────────────────
+KAMA(src, er_len, fast, slow) =>
+    change = math.abs(src - src[er_len])
+    volatility = ta.sum(math.abs(src - src[1]), er_len)
+    er = volatility != 0 ? change / volatility : 0
+    fastest = 2 / (fast + 1)
+    slowest = 2 / (slow + 1)
+    smoothing = er * (fastest - slowest) + slowest
+    sc = smoothing * smoothing
+
+    var float kama = src
+    kama := nz(kama, src)
+    kama := kama + sc * (src - kama)
+    kama
+
+// ────────────────────────────────────────────────
+//  INPUTS
+// ────────────────────────────────────────────────
+var string adaptGroup   = "🎯 Higher Timeframe Adaptation"
+bool   i_autoAdapt       = input.bool(true,  "Auto-Adapt to Higher Timeframe", group = adaptGroup)
+string i_adaptSensitivity = input.string("Medium", "Adaptation Sensitivity", options = ["Low", "Medium", "High"], group = adaptGroup)
+
+var string manualGroup = "⚙️ Manual Override (if Auto-Adapt OFF)"
+int lenRSI   = input.int(9,  "RSI Length",   minval = 5,  maxval = 35,  group = manualGroup)
+int lenVWMA  = input.int(21, "VWMA Period",  minval = 10, maxval = 50,  group = manualGroup)
+int kama_len = input.int(10, "KAMA Length",  minval = 3,  maxval = 100, group = manualGroup)
+
+var string enhanceGroup = "📊 Enhanced Features"
+int lookback = input.int(100, "Dynamic Level Lookback", group = enhanceGroup)
+float vol_mult = input.float(1.5, "Volume Filter Multiplier", group = enhanceGroup)
+
+// ────────────────────────────────────────────────
+//  PRE-COMPUTED RSI VALUES
+// ────────────────────────────────────────────────
+rsi_5  = TrueRSI(close, 5)
+rsi_6  = TrueRSI(close, 6)
+rsi_7  = TrueRSI(close, 7)
+rsi_8  = TrueRSI(close, 8)
+rsi_9  = TrueRSI(close, 9)
+rsi_10 = TrueRSI(close, 10)
+rsi_11 = TrueRSI(close, 11)
+rsi_12 = TrueRSI(close, 12)
+rsi_13 = TrueRSI(close, 13)
+rsi_14 = TrueRSI(close, 14)
+rsi_15 = TrueRSI(close, 15)
+rsi_16 = TrueRSI(close, 16)
+rsi_17 = TrueRSI(close, 17)
+rsi_18 = TrueRSI(close, 18)
+rsi_19 = TrueRSI(close, 19)
+rsi_20 = TrueRSI(close, 20)
+rsi_22 = TrueRSI(close, 22)
+rsi_24 = TrueRSI(close, 24)
+rsi_26 = TrueRSI(close, 26)
+rsi_28 = TrueRSI(close, 28)
+rsi_30 = TrueRSI(close, 30)
+rsi_35 = TrueRSI(close, 35)
+
+// ────────────────────────────────────────────────
+//  HIGHER TIMEFRAME ADAPTATION
+// ────────────────────────────────────────────────
+int tfMinutes = timeframe.in_seconds() / 60
+
+getHigherTF() =>
+    if not i_autoAdapt
+        tfMinutes
+    else if tfMinutes <= 20
+        60
+    else if tfMinutes <= 30
+        1440
+    else if tfMinutes <= 240
+        10080
+    else if tfMinutes <= 2880
+        43200
+    else
+        129600
+
+int higherTFMinutes = getHigherTF()
+
+float adaptMult = switch i_adaptSensitivity
+    "High"   => 1.2
+    "Medium" => 1.0
+    => 0.8
+
+int rsi_len = i_autoAdapt ?
+     math.max(7,   math.min(35,  math.round(9  + math.log10(higherTFMinutes + 1) * 7  * adaptMult))) :
+     lenRSI
+
+int vwma_len = i_autoAdapt ?
+     math.max(14,  math.min(50,  math.round(16 + math.log10(higherTFMinutes + 1) * 9  * adaptMult))) :
+     lenVWMA
+
+int kama_len_final = i_autoAdapt ?
+     math.max(6,   math.min(100, math.round(8  + math.log10(higherTFMinutes + 1) * 6  * adaptMult))) :
+     kama_len
+
+float almaOffset = 0.85
+float almaSigma  = 6.0
+
+// ────────────────────────────────────────────────
+//  RSI SELECTOR
+// ────────────────────────────────────────────────
+getRSI(int len) =>
+    switch
+        len <= 5  => rsi_5
+        len <= 6  => rsi_6
+        len <= 7  => rsi_7
+        len <= 8  => rsi_8
+        len <= 9  => rsi_9
+        len <= 10 => rsi_10
+        len <= 11 => rsi_11
+        len <= 12 => rsi_12
+        len <= 13 => rsi_13
+        len <= 14 => rsi_14
+        len <= 15 => rsi_15
+        len <= 16 => rsi_16
+        len <= 17 => rsi_17
+        len <= 18 => rsi_18
+        len <= 19 => rsi_19
+        len <= 20 => rsi_20
+        len <= 22 => rsi_22
+        len <= 24 => rsi_24
+        len <= 26 => rsi_26
+        len <= 28 => rsi_28
+        len <= 30 => rsi_30
+        => rsi_35
+
+float rsx = getRSI(rsi_len)
+
+// ────────────────────────────────────────────────
+//  CALCULATIONS
+// ────────────────────────────────────────────────
+float vwmaRSX = ta.vwma(rsx, vwma_len)
+float kama = KAMA(rsx, kama_len_final, 2, 30)
+
+// RSI Histogram
+histogram = rsx - vwmaRSX
+
+// Dynamic Levels
+rsi_high = ta.highest(rsx, lookback)
+rsi_low  = ta.lowest(rsx, lookback)
+dynObLevel = rsi_high * 0.85
+dynOsLevel = rsi_low * 1.15
+
+// ────────────────────────────────────────────────
+//  HTF BIAS (for background coloring)
+// ────────────────────────────────────────────────
+htf_rsx = request.security(syminfo.tickerid, switch higherTFMinutes
+    129600 => "12M"
+    43200  => "1M"
+    10080  => "1W"
+    1440   => "1D"
+    60     => "60"
+    => timeframe.period, TrueRSI(close, rsi_len))
+
+// ────────────────────────────────────────────────
+//  PLOTS
+// ────────────────────────────────────────────────
+plot(rsx,      "True RSI",        color = #00FF00, linewidth = 3)
+plot(vwmaRSX,  "VWMA",            color = #ff0000, linewidth = 3)
+plot(kama,     "KAMA (Adaptive)", color = #1e00ff, linewidth = 3)
+
+// Histogram
+plot(histogram, "Momentum Histogram", color=histogram > 0 ? color.new(#00FF00, 40) : color.new(#FF0000, 40), style=plot.style_columns)
+
+// Dynamic levels
+hline(dynObLevel, "Dynamic OB",  color = color.new(#FF00FF, 50), linestyle = hline.style_dashed)
+hline(dynOsLevel, "Dynamic OS",  color = color.new(#0066FF, 50), linestyle = hline.style_dashed)
+hline(50, "Midline",             color = color.gray)
+
+fill(plot(rsx), plot(vwmaRSX), color = rsx > vwmaRSX ? color.new(#09ff00, 72) : color.new(#ff0000, 68))
+
+// HTF Bias Background Coloring
+bgcolor(htf_rsx > 50 ? color.new(#00FF00, 85) : color.new(#FF0000, 85), title = "HTF Bias (Green=Up, Red=Down)")
+
+// ────────────────────────────────────────────────
+//  DIVERGENCE DETECTION WITH VOLUME FILTER
+// ────────────────────────────────────────────────
+int leftBars  = 5
+int rightBars = 5
+
+float lowPivot  = ta.pivotlow(rsx, leftBars, rightBars)
+float highPivot = ta.pivothigh(rsx, leftBars, rightBars)
+
+bool lowPivotFound  = not na(lowPivot)
+bool highPivotFound = not na(highPivot)
+
+// Volume filter
+avg_vol = ta.sma(volume, 20)
+vol_spike = volume > avg_vol * vol_mult
+
+bool bullDiv       = lowPivotFound  and low < low[rightBars * 2]   and rsx > rsx[rightBars * 2] and vol_spike
+bool hiddenBullDiv = lowPivotFound  and low > low[rightBars * 2]   and rsx < rsx[rightBars * 2] and vol_spike
+bool bearDiv       = highPivotFound and high > high[rightBars * 2] and rsx < rsx[rightBars * 2] and vol_spike
+bool hiddenBearDiv = highPivotFound and high < high[rightBars * 2] and rsx > rsx[rightBars * 2] and vol_spike
+
+// Plot divergences
+plotshape(bullDiv, title="Bull Div", location=location.bottom, color=#00FF00, style=shape.labelup, text="Bull", size=size.small)
+plotshape(bearDiv, title="Bear Div", location=location.top, color=#FF0066, style=shape.labeldown, text="Bear", size=size.small)
+plotshape(hiddenBullDiv, title="H Bull", location=location.bottom, color=#00FFFF, style=shape.labelup, text="HBull", size=size.small)
+plotshape(hiddenBearDiv, title="H Bear", location=location.top, color=#FF00FF, style=shape.labeldown, text="HBear", size=size.small)
+
+// ────────────────────────────────────────────────
+//  KELTNER SQUEEZE (more reliable than BB)
+// ────────────────────────────────────────────────
+bbw_val = ta.bbw(close, 20, 2.0)
+kc_val = ta.kc(close, 20, 1.5)
+squeeze = ta.bb(close, 20, 2)[0] < kc_val[0]
+bgcolor(squeeze ? color.new(#AA00FF, 90) : na, title = "Squeeze")
+
+// ────────────────────────────────────────────────
+//  INFO TABLE
+// ────────────────────────────────────────────────
+var table infoTable = table.new(position.top_right, columns = 2, rows = 12, bgcolor = color.new(color.black, 85))
+
+if barstate.islastconfirmedhistory or barstate.isrealtime
+    table.cell(infoTable, 0, 0, "Parameter",     text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 0, "Value",         text_color = color.white, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 1, "Current TF",    text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 1, timeframe.period, text_color = color.yellow, text_size = size.tiny)
+
+    string htfDisplay = switch
+        higherTFMinutes >= 129600 => "3 Months"
+        higherTFMinutes >=  43200 => "1 Month"
+        higherTFMinutes >=  10080 => "1 Week"
+        higherTFMinutes >=   1440 => "1 Day"
+        higherTFMinutes >=     60 => "1 Hour"
+        => "Current"
+
+    table.cell(infoTable, 0, 2, "Using HTF",     text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 2, htfDisplay,      text_color = color.lime, text_size = size.tiny)
+
+    string adaptStatus = i_autoAdapt ? "ON" : "OFF"
+    color  adaptColor  = i_autoAdapt ? color.green : color.red
+    table.cell(infoTable, 0, 3, "Auto-Adapt",    text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 3, adaptStatus,     text_color = adaptColor, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 4, "RSI Length",    text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 4, str.tostring(rsi_len),   text_color = color.aqua, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 5, "VWMA Period",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 5, str.tostring(vwma_len),  text_color = color.aqua, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 6, "KAMA Length",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 6, str.tostring(kama_len_final), text_color = color.purple, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 7, "HTF RSI",       text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 7, str.tostring(math.round(htf_rsx, 2)), text_color = htf_rsx > 50 ? color.green : color.red, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 8, "Sensitivity",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 8, i_adaptSensitivity, text_color = color.orange, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 9, "HTF Minutes",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 9, str.tostring(higherTFMinutes), text_color = color.purple, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 10, "Dynamic OB",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 10, str.tostring(math.round(dynObLevel, 2)), text_color = color.orange, text_size = size.tiny)
+
+    table.cell(infoTable, 0, 11, "Dynamic OS",   text_color = color.white, text_size = size.tiny)
+    table.cell(infoTable, 1, 11, str.tostring(math.round(dynOsLevel, 2)), text_color = color.orange, text_size = size.tiny)
+
+// ────────────────────────────────────────────────
+//  ALERTS
+// ────────────────────────────────────────────────
+alertcondition(bullDiv,       title = "Bullish Divergence (Vol Confirmed)",       message = "HILEGA HTF: Bullish Divergence")
+alertcondition(bearDiv,       title = "Bearish Divergence (Vol Confirmed)",       message = "HILEGA HTF: Bearish Divergence")
+alertcondition(hiddenBullDiv, title = "Hidden Bullish Div (Vol Confirmed)",       message = "HILEGA HTF: Hidden Bullish")
+alertcondition(hiddenBearDiv, title = "Hidden Bearish Div (Vol Confirmed)",       message = "HILEGA HTF: Hidden Bearish")
+alertcondition(squeeze,       title = "Keltner Squeeze",               message = "HILEGA HTF: Bollinger Band Squeeze")
+alertcondition(rsx > vwmaRSX, title = "RSI > VWMA",               message = "HILEGA HTF: Bullish Momentum")
+alertcondition(rsx < vwmaRSX, title = "RSI < VWMA",               message = "HILEGA HTF: Bearish Momentum")
+alertcondition(ta.crossover(rsx, kama),  title = "RSI Cross KAMA Bull",  message = "HILEGA HTF: RSI Cross Above KAMA")
+alertcondition(ta.crossunder(rsx, kama), title = "RSI Cross KAMA Bear",  message = "HILEGA HTF: RSI Cross Below KAMA")

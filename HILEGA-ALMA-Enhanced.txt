@@ -1,0 +1,116 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © sahooss - Enhanced Version with Dynamic Levels, KAMA, Histogram & Volume Filter
+
+//@version=6
+indicator("HILEGA-ALMA Enhanced", overlay=false, max_bars_back=500, scale=scale.right)
+
+// ─────── TRUE RSI FOR RENKO (Perfect on Renko) ───────
+TrueRSI(src, length) =>
+    var float up = 0.0
+    var float down = 0.0
+    delta = src - src[1]
+    up := delta > 0 ? delta : 0
+    down := delta < 0 ? -delta : 0
+    maUp   = ta.alma(up, length, 0.85, 5)
+    maDown = ta.alma(down, length, 0.85, 5)
+    rs = maUp / maDown
+    100 - (100 / (1 + rs))
+
+// ─────── KAMA (Kaufman Adaptive Moving Average) ───────
+KAMA(src, er_len, fast, slow) =>
+    change = math.abs(src - src[er_len])
+    volatility = ta.sum(math.abs(src - src[1]), er_len)
+    er = volatility != 0 ? change / volatility : 0
+    fastest = 2 / (fast + 1)
+    slowest = 2 / (slow + 1)
+    smoothing = er * (fastest - slowest) + slowest
+    sc = smoothing * smoothing
+
+    var float kama = src
+    kama := nz(kama, src)
+    kama := kama + sc * (src - kama)
+    kama
+
+// ─────── INPUTS ───────
+lenRSI   = input.int(11, "RSI Length")
+lenVWMA  = input.int(21, "VWMA Period")
+kama_len = input.int(10, "KAMA Length")
+lookback = input.int(100, "Dynamic Level Lookback")
+vol_mult = input.float(1.5, "Volume Filter Multiplier")
+
+// ─────── CALCULATIONS ───────
+rsx     = TrueRSI(close, lenRSI)
+vwmaRSX = ta.vwma(rsx, lenVWMA)
+
+// KAMA instead of TEMA
+kama_rsx = KAMA(rsx, kama_len, 2, 30)
+
+// RSI Histogram (momentum clarity)
+histogram = rsx - vwmaRSX
+
+// Dynamic Overbought/Oversold Levels
+rsi_high = ta.highest(rsx, lookback)
+rsi_low  = ta.lowest(rsx, lookback)
+dynObLevel = rsi_high * 0.85
+dynOsLevel = rsi_low * 1.15
+
+// ─────── PLOTS ───────
+plot(rsx,      "True RSI",     color=#00FF00, linewidth=3)
+plot(vwmaRSX,  "VWMA",         color=#ff0000, linewidth=3)
+plot(kama_rsx, "KAMA",         color=#1e00ff, linewidth=3)
+
+// Histogram
+plot(histogram, "Momentum Histogram", color=histogram > 0 ? color.new(#00FF00, 40) : color.new(#FF0000, 40), style=plot.style_columns)
+
+// Dynamic levels
+hline(dynObLevel, "Dynamic OB",  color=color.new(#FF00FF, 50), linestyle=hline.style_dashed)
+hline(dynOsLevel, "Dynamic OS",  color=color.new(#0066FF, 50), linestyle=hline.style_dashed)
+hline(50, "Midline",             color=color.gray)
+
+fill(plot(rsx), plot(vwmaRSX), color=rsx > vwmaRSX ? color.new(#09ff00, 72) : color.new(#ff0000, 68))
+
+// ─────── DIVERGENCE DETECTION WITH VOLUME FILTER ───────
+leftBars  = 5
+rightBars = 5
+
+lowPivot  = ta.pivotlow(rsx, leftBars, rightBars)
+highPivot = ta.pivothigh(rsx, leftBars, rightBars)
+
+lowPivotFound  = not na(lowPivot)
+highPivotFound = not na(highPivot)
+
+// Volume filter
+avg_vol = ta.sma(volume, 20)
+vol_spike = volume > avg_vol * vol_mult
+
+// Regular Bullish Divergence with volume confirmation
+bullDiv = lowPivotFound and low < low[rightBars*2] and rsx > rsx[rightBars*2] and vol_spike
+// Regular Bearish Divergence with volume confirmation
+bearDiv = highPivotFound and high > high[rightBars*2] and rsx < rsx[rightBars*2] and vol_spike
+
+// Hidden Bullish Divergence with volume confirmation
+hiddenBullDiv = lowPivotFound and low > low[rightBars*2] and rsx < rsx[rightBars*2] and vol_spike
+// Hidden Bearish Divergence with volume confirmation
+hiddenBearDiv = highPivotFound and high < high[rightBars*2] and rsx > rsx[rightBars*2] and vol_spike
+
+// Plot divergences
+plotshape(bullDiv, title="Bull Div", location=location.bottom, color=#00FF00, style=shape.labelup, text="Bull", size=size.small)
+plotshape(bearDiv, title="Bear Div", location=location.top, color=#FF0066, style=shape.labeldown, text="Bear", size=size.small)
+plotshape(hiddenBullDiv, title="H Bull", location=location.bottom, color=#00FFFF, style=shape.labelup, text="HBull", size=size.small)
+plotshape(hiddenBearDiv, title="H Bear", location=location.top, color=#FF00FF, style=shape.labeldown, text="HBear", size=size.small)
+
+// ─────── BB SQUEEZE ───────
+bbw_val = ta.bbw(close, 20, 2.0)
+kc_val = ta.kc(close, 20, 1.5)
+// More reliable squeeze: BB inside KC
+squeeze = ta.bb(close, 20, 2)[0] < kc_val[0]
+bgcolor(squeeze ? color.new(#AA00FF, 90) : na, title="Squeeze")
+
+// ─────── ALERTS ───────
+alertcondition(bullDiv,       title="Bullish Divergence (Vol Confirmed)",  message="HILEGA Enhanced: Bullish Div")
+alertcondition(bearDiv,       title="Bearish Divergence (Vol Confirmed)",  message="HILEGA Enhanced: Bearish Div")
+alertcondition(hiddenBullDiv, title="Hidden Bullish Div (Vol Confirmed)",  message="HILEGA Enhanced: Hidden Bull")
+alertcondition(hiddenBearDiv, title="Hidden Bearish Div (Vol Confirmed)",  message="HILEGA Enhanced: Hidden Bear")
+alertcondition(squeeze,       title="Keltner Squeeze",                     message="HILEGA Enhanced: Squeeze")
+alertcondition(rsx > vwmaRSX, title="RSI > VWMA (Bullish)",                message="HILEGA Enhanced: Bullish Momentum")
+alertcondition(rsx < vwmaRSX, title="RSI < VWMA (Bearish)",                message="HILEGA Enhanced: Bearish Momentum")
